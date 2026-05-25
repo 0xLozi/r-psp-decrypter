@@ -52,7 +52,7 @@ fn main() {
     if magic_number == PSP_MAGIC {
         println!("Magic Number correcto (~PSP)! Iniciando desencriptado PRX...");
         
-        let out_data = prx_decrypt::decrypt_prx();
+        let out_data = prx_decrypt::decrypt_prx(&in_data);
         
         // 6. Escribir el resultado en el disco (Simulado por ahora)
         // fs::write(&out_filename, out_data).expect("Error escribiendo el archivo");
