@@ -8,8 +8,17 @@ pub fn decrypt_prx(binario_eboot: &[u8]) {
 
     let tag: u32 = u32::from_le_bytes(bytes_tag_offset);
 
+    // como no sabemos el PRX type pues toca desencriptarlo de manera brute-force
+    let resultado = pspDecryptTipo0(binario_eboot);
 
     
     
     
+}
+
+
+
+pub fn pspDecryptTipo0(binario_eboot: &[u8]) {
+    
+
 }
