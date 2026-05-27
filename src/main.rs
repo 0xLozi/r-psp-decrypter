@@ -2,6 +2,8 @@ use clap::Parser;
 use std::fs;
 use std::process;
 mod prx_decrypt;
+mod keys;
+mod tag_info;
 
 /// Desencriptador de EBOOT.BIN (PRX) para PSP
 #[derive(Parser, Debug)]

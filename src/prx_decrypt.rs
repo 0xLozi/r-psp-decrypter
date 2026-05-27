@@ -1,3 +1,36 @@
+use std::array::TryFromSliceError;
+
+
+enum PspError {
+    SliceError(TryFromSliceError),
+    InvalidHeader,
+    Io(std::io::Error),
+}
+
+struct TAG_INFO {
+    tag: u32,
+    key: *const u32,
+    code: u8,
+    code_extra: u8,
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 pub fn decrypt_prx(binario_eboot: &[u8]) {
@@ -16,11 +49,26 @@ pub fn decrypt_prx(binario_eboot: &[u8]) {
 
 
 
-pub fn pspDecryptTipo0(binario_eboot: &[u8]) {
+pub fn pspDecryptTipo0(binario_eboot: &[u8]) -> Result<(), PspError> {
     // el size a desencriptar para los de tipo 0 se encuentra en 0xB0
     let offset_size_slice = &binario_eboot[0xB0 .. 0xB0 + 4];
-    let arreglo_fijo: [u8;4] = offset_size_slice.try_into().unwrap();
+    let arreglo_fijo: [u8;4] = offset_size_slice.try_into().map_err(PspError::SliceError)?;
     let decrypt_size = u32::from_le_bytes(arreglo_fijo);
-    println!("Tamaño a desencriptar: {}", decrypt_size);
+
+    
+
+    // const auto pti = GetTagInfo((u32)*(u32_le *)&inbuf[0xD0]);
+
+	// if (!pti)
+	// {
+	// 	return -1;
+	// }
+
+    const info_tag = get_tag_info(binario_eboot[0xD0]);
+
+
+
+
+
 
 }
