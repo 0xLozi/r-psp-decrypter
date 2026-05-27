@@ -314,7 +314,7 @@ static G_KEYDEVPSAR: [u8; 144] = [
 
 // ------------------------------------------------
 
-static G_TAG_INFO: [TAG_INFO; 20] = [
+pub static G_TAG_INFO: [TAG_INFO; 20] = [
     TAG_INFO {
         tag: 0x00000000,
         key: KeyType::U32(&G_KEY0),

@@ -4,6 +4,7 @@ use std::process;
 mod prx_decrypt;
 mod keys;
 mod tag_info;
+mod keys_service;
 
 /// Desencriptador de EBOOT.BIN (PRX) para PSP
 #[derive(Parser, Debug)]
