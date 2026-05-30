@@ -20,12 +20,7 @@
 // }
 
 // 144 bytes just to make it clear
-pub fn expanded_seed(seed: &u8, key: u32, bonus_seed: u8 ) -> [u8; 0x90] {
-    
-
-
-
-
+pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) -> [u8; 0x90] {
     [0; 0x90]
 }
 
