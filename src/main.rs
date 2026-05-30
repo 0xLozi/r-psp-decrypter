@@ -5,6 +5,7 @@ mod prx_decrypt;
 mod keys;
 mod tag_info;
 mod keys_service;
+mod headers;
 
 /// Desencriptador de EBOOT.BIN (PRX) para PSP
 #[derive(Parser, Debug)]

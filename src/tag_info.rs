@@ -15,8 +15,8 @@ pub struct TAG_INFO {
 // THIS IS DECRYPTION 2
 pub struct TAG_INFO2 {
     pub tag: u32,
-    pub key: &'static [u8; 144],
+    pub key: &'static [u8; 16],
     pub code: u8,
-    pub type_code: u8,
-    pub seed: &'static [u8; 144],
+    pub type_code: Option<u8>,
+    pub seed: Option<&'static [u8; 144]>,
 }
