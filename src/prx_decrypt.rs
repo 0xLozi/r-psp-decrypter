@@ -7,26 +7,6 @@ enum PspError {
     Io(std::io::Error),
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 pub fn decrypt_prx(binario_eboot: &[u8]) {
     // Primero agarra el tag (el cual se encuentra un el offset 0xD0)
     let bytes_tag_offset: [u8; 4] = binario_eboot[0xD0 .. 0xD0 + 4]

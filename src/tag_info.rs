@@ -18,5 +18,5 @@ pub struct TAG_INFO2 {
     pub key: &'static [u8; 16],
     pub code: u8,
     pub type_code: Option<u8>,
-    pub seed: Option<&'static [u8; 144]>,
+    pub seed: Option<&'static [u8; 16]>,
 }

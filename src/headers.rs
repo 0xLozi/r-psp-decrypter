@@ -1,23 +1,4 @@
-
-// static std::array<u8, 0x90> expandSeed(const u8 *seed, int key, const u8 *bonusSeed = nullptr)
-// {
-// 	std::array<u8, 0x90> expandedSeed;
-// 	// perform some AES-CTR like encryption of seed
-// 	for (auto i = 0u; i < expandedSeed.size(); i += 0x10)
-// 	{
-// 		memcpy(expandedSeed.data()+i, seed, 0x10);
-// 		expandedSeed[i] = i/0x10;
-// 	}
-// 	kirk7(expandedSeed.data(), expandedSeed.data(), expandedSeed.size(), key);
-// 	if (bonusSeed)
-// 	{
-// 		for (auto i = 0u; i < expandedSeed.size(); ++i)
-// 		{
-// 			expandedSeed[i] ^= bonusSeed[i % 0x10];
-// 		}
-// 	}
-// 	return expandedSeed;
-// }
+use crate::kirk_lib::kirk_engine::kirk7;
 
 // 144 bytes just to make it clear
 pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) -> [u8; 0x90] {
@@ -35,7 +16,7 @@ pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) ->
     // TODO: Implementar kirk7. 
     // En C++ sería: kirk7(expandedSeed.data(), expandedSeed.data(), expandedSeed.size(), key);
     // En Rust sería algo parecido a esto:
-    // kirk7(&mut expanded_seed, key);
+    kirk7(&mut expanded_seed, key);
     if let Some(bonus) = bonus_seed {
         // Recorremos los 144 bytes de la semilla ya expandida y encriptada
         for i in 0..0x90 {

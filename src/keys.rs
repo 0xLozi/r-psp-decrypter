@@ -597,7 +597,7 @@ pub static G_TAG_INFO_2: [TAG_INFO2; 144] = [
     TAG_INFO2 { tag: 0x407810F0, key: &KEY_407810F0, code: 0x6A, type_code: None, seed: None },
     TAG_INFO2 { tag: 0xE92410F0, key: &DRMKEYS_6XX_1, code: 0x40, type_code: None, seed: None },
     TAG_INFO2 { tag: 0x692810F0, key: &DRMKEYS_6XX_2, code: 0x40, type_code: None, seed: None },
-    TAG_INFO2 { tag: 0x2FD313F0, key: &PAUTH_98B83B5D_1, code: 0x47, type_code: Some(5), seed: None },
-    TAG_INFO2 { tag: 0x2FD312F0, key: &PAUTH_F7AA47F6_1, code: 0x47, type_code: Some(5), seed: None },
-    TAG_INFO2 { tag: 0x2FD311F0, key: &PAUTH_F7AA47F6_2, code: 0x47, type_code: Some(5), seed: None },
+    TAG_INFO2 { tag: 0x2FD313F0, key: &PAUTH_98B83B5D_1, code: 0x47, type_code: Some(5), seed: Some(&PAUTH_98B83B5D_XOR) },
+    TAG_INFO2 { tag: 0x2FD312F0, key: &PAUTH_F7AA47F6_1, code: 0x47, type_code: Some(5), seed: Some(&PAUTH_F7AA47F6_XOR) },
+    TAG_INFO2 { tag: 0x2FD311F0, key: &PAUTH_F7AA47F6_2, code: 0x47, type_code: Some(5), seed: Some(&PAUTH_F7AA47F6_XOR) },
 ];
