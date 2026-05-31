@@ -6,6 +6,7 @@ mod keys;
 mod tag_info;
 mod keys_service;
 mod headers;
+mod kirk_lib;
 
 /// Desencriptador de EBOOT.BIN (PRX) para PSP
 #[derive(Parser, Debug)]
