@@ -7,12 +7,6 @@ enum PspError {
     Io(std::io::Error),
 }
 
-struct TAG_INFO {
-    tag: u32,
-    key: *const u32,
-    code: u8,
-    code_extra: u8,
-}
 
 
 
