@@ -49,3 +49,22 @@ pub fn decrypt_kirk_header(
         outbuf[i] = outbuf[i] ^ xorbuf[i + 0x40]; //Hacemos +0x40 para así realizar XOR al resto del slice, ya que hicimos de 0 a 0x40 pues ahora tenemos que hacer para adelante
     }    
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*; // Con esto importamos todo lo que se encuentra dentro del archivo
+
+    #[test] // Esta etiqueta lo que hace es convertir la funcion de abajo en un caso de prueba
+    fn test_decrypt_kirk_header_no_crash() {
+        let mut outbuf = [0u8; 0x40]; // empty box
+        let inbuf = [0xAA; 0x40];     // 64 bytes of encrypted header
+        let xorbuf = [0xBB; 144];     // 144 bytes of expanded seed
+        let key_id = 1;
+
+        decrypt_kirk_header(&mut outbuf, &inbuf, &xorbuf, key_id);
+
+        assert_ne!(outbuf, [0u8; 0x40], "Error! El outbuf no se modificó en absoluto");
+    }
+
+}
