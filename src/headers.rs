@@ -30,18 +30,22 @@ pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) ->
 }
 
 
-
-
-#[derive(Debug)]
-pub struct PrxType0 {
-    tag: u32, 
-}
-
-
-impl PrxType0 {
-    pub fn recortar() {
-        println!("prueba")
+pub fn decrypt_kirk_header(
+    outbuf: &mut [u8; 0x40], 
+    inbuf: &[u8; 0x40],      
+    xorbuf: &[u8],           
+    key_id: i32,
+) {
+    for i in 0..0x40 {
+        outbuf[i] = inbuf[i] ^ xorbuf[i];
     }
+
+    // (Como outbuf es un arreglo de 64, Rust lo convierte a un slice automáticamente para kirk7)
+    kirk7(outbuf, key_id);
+
+    // XOR con los siguientes 64 bytes (64 a 127)
+    // Usamos i + 0x40 para reemplazar el peligroso *xorbuf++ de C++, demasiado viejo esa práctica pero mejor este enfoque para más seguridad
+    for i in 0..0x40 {
+        outbuf[i] = outbuf[i] ^ xorbuf[i + 0x40]; //Hacemos +0x40 para así realizar XOR al resto del slice, ya que hicimos de 0 a 0x40 pues ahora tenemos que hacer para adelante
+    }    
 }
-
-

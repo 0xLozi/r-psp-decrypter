@@ -197,7 +197,7 @@ pub fn kirk_4_7_get_key(key_type: i32) -> Option<&'static[u8;16]> {
 // This means that they use CBC method, which is Cipher Block Chaining
 //   AES_cbc_decrypt(&aesKey, inbuff, outbuff, size);
 // So the method of decryption is AES-128-CBC, and I don't see any weird padding. Therefore I might use that
-pub fn kirk7(expanded_seed: &mut [u8; 144], key_id: i32) {
+pub fn kirk7(expanded_seed: &mut [u8], key_id: i32) {
     // Just because I can't force the math to make me an iv block full of zeros (restriction because of the library), i had to create an array of full of zeros in order to skip the XOR part...
     let iv = [0u8; 16];
     let real_key = kirk_4_7_get_key(key_id)
