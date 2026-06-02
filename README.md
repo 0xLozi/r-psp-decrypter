@@ -1,7 +1,10 @@
-# PSP PRX Decrypter - Rust Port
+# PSP PRX Decrypter - Rust Port (Development Fork)
 
-Port moderno y seguro en Rust de la herramienta de desencriptado de PRX/EBOOT.BIN del PlayStation Portable (PSP), basado en el motor KIRK.
+**Este es mi fork de desarrollo** del proyecto de desencriptado de PRX/EBOOT.BIN para PSP.
 
+Versión original / referencia: [https://github.com/0xLozi/R-PSP]
+
+Este repositorio contiene mi implementación en Rust (en progreso).
 ## Features
 - Detección automática de tipo de tag/encriptación
 - Soporte para AES + KIRK engine decryption
@@ -30,4 +33,3 @@ cargo test
 - [ ] Soporte completo para todos los tipos de tags
 - [ ] Tests con archivos reales
 - [ ] CLI más completa con argumentos
-- [ ] ...
