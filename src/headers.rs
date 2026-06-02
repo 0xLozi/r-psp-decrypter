@@ -1,7 +1,7 @@
-use crate::kirk_lib::kirk_engine::kirk7;
+use crate::{error_handling::errors::KirkError, kirk_lib::kirk_engine::kirk7};
 
 // 144 bytes just to make it clear
-pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) -> [u8; 0x90] {
+pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) -> Result<[u8; 0x90], KirkError> {
     let mut expanded_seed = [0u8; 0x90];
 
     // Lógica para la expansión de la seed
@@ -16,7 +16,8 @@ pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) ->
     // TODO: Implementar kirk7. 
     // En C++ sería: kirk7(expandedSeed.data(), expandedSeed.data(), expandedSeed.size(), key);
     // En Rust sería algo parecido a esto:
-    kirk7(&mut expanded_seed, key);
+    kirk7(&mut expanded_seed, key)?;
+
     if let Some(bonus) = bonus_seed {
         // Recorremos los 144 bytes de la semilla ya expandida y encriptada
         for i in 0..0x90 {
@@ -26,7 +27,7 @@ pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) ->
         }
     }
     // Retornamos el arreglo estático
-    expanded_seed
+    Ok(expanded_seed)
 }
 
 
@@ -35,19 +36,22 @@ pub fn decrypt_kirk_header(
     inbuf: &[u8; 0x40],      
     xorbuf: &[u8],           
     key_id: i32,
-) {
+) -> Result<(), KirkError>{
     for i in 0..0x40 {
         outbuf[i] = inbuf[i] ^ xorbuf[i];
     }
 
     // (Como outbuf es un arreglo de 64, Rust lo convierte a un slice automáticamente para kirk7)
-    kirk7(outbuf, key_id);
+    // fix this before cargo build & run
+    kirk7(outbuf, key_id)?;
 
     // XOR con los siguientes 64 bytes (64 a 127)
     // Usamos i + 0x40 para reemplazar el peligroso *xorbuf++ de C++, demasiado viejo esa práctica pero mejor este enfoque para más seguridad
     for i in 0..0x40 {
         outbuf[i] = outbuf[i] ^ xorbuf[i + 0x40]; //Hacemos +0x40 para así realizar XOR al resto del slice, ya que hicimos de 0 a 0x40 pues ahora tenemos que hacer para adelante
     }    
+
+    Ok(())
 }
 
 

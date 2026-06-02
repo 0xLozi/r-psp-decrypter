@@ -1,5 +1,6 @@
 use aes::Aes128;
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
+use crate::error_handling::errors::KirkError;
 
 // We create an alias
 type Aes128CbcDec = cbc::Decryptor<Aes128>;
@@ -168,14 +169,6 @@ static PY1: [u8;20] = [0x04, 0x9D, 0xF1, 0xA0, 0x75, 0xC0, 0xE0, 0x4F, 0xB3, 0x4
 
 /* ------------------------- KEY VAULT END ------------------------- */
 
-
-
-
-
-
-
-
-
 // void kirk7(u8* outbuff, const u8* inbuff, size_t size, int keyId)
 // {
 //   AES_ctx aesKey;
@@ -185,11 +178,11 @@ static PY1: [u8;20] = [0x04, 0x9D, 0xF1, 0xA0, 0x75, 0xC0, 0xE0, 0x4F, 0xB3, 0x4
 // }
 
 
-pub fn kirk_4_7_get_key(key_type: i32) -> Option<&'static[u8;16]> {
+pub fn kirk_4_7_get_key(key_type: i32) -> Result<&'static[u8;16], KirkError> {
     if key_type < 0 || key_type >= 0x80 {
-        return None;
+        return Err(KirkError::InvalidKeyId);
     }
-    return Some(&KEYVAULT[key_type as usize]);
+    return Ok(&KEYVAULT[key_type as usize]);
 }
 
 // interesting, this means the key has 128 bits of size
@@ -197,15 +190,15 @@ pub fn kirk_4_7_get_key(key_type: i32) -> Option<&'static[u8;16]> {
 // This means that they use CBC method, which is Cipher Block Chaining
 //   AES_cbc_decrypt(&aesKey, inbuff, outbuff, size);
 // So the method of decryption is AES-128-CBC, and I don't see any weird padding. Therefore I might use that
-pub fn kirk7(expanded_seed: &mut [u8], key_id: i32) {
+pub fn kirk7(expanded_seed: &mut [u8], key_id: i32) -> Result<(), KirkError> {
     // Just because I can't force the math to make me an iv block full of zeros (restriction because of the library), i had to create an array of full of zeros in order to skip the XOR part...
     let iv = [0u8; 16];
-    let real_key = kirk_4_7_get_key(key_id)
-    .expect("No se ha encontrado la llave en el vault");
+    let real_key = kirk_4_7_get_key(key_id)?;
 
     let decryptor = Aes128CbcDec::new(real_key.into(), &iv.into());
     
     // Como decrypt_padded_mut es una función genérica, usamos el Turbofish ::<> para indicarle explícitamente que la estrategia a usar es NoPadding
     decryptor.decrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(expanded_seed)
-    .expect("Fallo critico en kirk7: El tamaño del arreglo no seria valido para AES...");
+    .map_err(|_| KirkError::DecryptionFailed)?;
+    Ok(())
 }

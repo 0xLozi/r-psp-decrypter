@@ -14,3 +14,15 @@ pub enum PspError {
     #[error("Error al convertir slice: {0}")]
     SliceConversion(#[from] std::array::TryFromSliceError),
 }
+
+
+#[derive(Error, Debug)]
+pub enum KirkError {
+    /// Ocurre cuando el key_type no existe en el KEYVAULT
+    #[error("El keytype no existe en el KEYVAULT")]
+    InvalidKeyId,
+
+    /// Ocurre cuando el bloque de memoria no es múltiplo de 16 para AES
+    #[error("El bloque de memoria no es múltiplo de 16 para AES")]
+    DecryptionFailed,
+}
