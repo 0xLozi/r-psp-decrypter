@@ -66,5 +66,5 @@ mod tests {
 
         assert_ne!(outbuf, [0u8; 0x40], "Error! El outbuf no se modificó en absoluto");
     }
-
 }
+
