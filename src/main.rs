@@ -7,7 +7,9 @@ mod keys_service;
 mod headers;
 mod kirk_lib;
 mod error_handling;
+mod prx_types;
 use error_handling::errors::PspError;
+
 
 /// Desencriptador de EBOOT.BIN (PRX) para PSP
 #[derive(Parser, Debug)]

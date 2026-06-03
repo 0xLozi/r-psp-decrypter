@@ -54,6 +54,29 @@ pub fn decrypt_kirk_header(
     Ok(())
 }
 
+pub fn decrypt_kirk_header_type0 ( 
+    outbuf: &mut [u8; 0x70], 
+    inbuf: &[u8; 0x70],      
+    xorbuf: &[u8],           
+    key_id: i32,
+) -> Result<(), KirkError> {
+    for i in 0..0x70 {
+        outbuf[i] = inbuf[i] ^ xorbuf[i+0x14];
+    }   
+
+    kirk7(outbuf, key_id)?;
+
+    for i in 0..0x70 {
+        outbuf[i] = outbuf[i] ^ xorbuf[i + 0x20];
+    }
+
+    Ok(())
+}
+
+
+
+
+
 
 #[cfg(test)]
 mod tests {
