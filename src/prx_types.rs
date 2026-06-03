@@ -116,9 +116,9 @@ mod tests {
         let mut type1 = PrxType1::new(&eboot_data);
 
         let tag_bytes: [u8; 4] = type1.tag().try_into().expect("El Tag no tiene 4 bytes");
-        let tag_real = u32::from_le_bytes(tag_bytes); // Esto será 0xC0CB167C automáticamente
+        let tag = u32::from_le_bytes(tag_bytes); // Esto será 0xC0CB167C automáticamente
 
-        let key_eboot = keys_service::get_tag_info(tag_real)
+        let key_eboot = keys_service::get_tag_info(tag)
             .expect("El Tag de este juego no está en la base de datos de keys_service!");
 
         let key_id = key_eboot.code as i32;
@@ -139,7 +139,7 @@ mod tests {
         }
 
         // Decrypt
-        type1.decrypt(key_id).expect("El motor AES falló miserablemente");
+        type1.decrypt(key_id).expect("El motor AES falló...");
 
         let es_valido = type1.is_valid(&xorbuf);
 
