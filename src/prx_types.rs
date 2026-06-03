@@ -105,7 +105,7 @@ mod tests {
         let ruta_eboot = "/home/snake/Downloads/lego_batman_game/PSP_GAME/SYSDIR/EBOOT.BIN";
         
         let mut file = File::open(ruta_eboot)
-            .expect("¡No se pudo abrir el EBOOT! Revisá la ruta.");
+            .expect("No se pudo abrir el EBOOT! Revisá la ruta.");
         
         // We read the entire file into de mem (this is a test, so it doesn't matter if it waste RAM)
         let mut eboot_data = Vec::new();
@@ -119,7 +119,7 @@ mod tests {
         let tag_real = u32::from_le_bytes(tag_bytes); // Esto será 0xC0CB167C automáticamente
 
         let key_eboot = keys_service::get_tag_info(tag_real)
-            .expect("¡El Tag de este juego no está en la base de datos de keys_service!");
+            .expect("El Tag de este juego no está en la base de datos de keys_service!");
 
         let key_id = key_eboot.code as i32;
        
@@ -138,14 +138,11 @@ mod tests {
             }
         }
 
-        // 3. ¡Desencriptamos!
+        // Decrypt
         type1.decrypt(key_id).expect("El motor AES falló miserablemente");
 
-        // 4. EL MOMENTO DE LA VERDAD
         let es_valido = type1.is_valid(&xorbuf);
 
-        // Si es_valido es false, Rust tira Panic y el test se pone rojo.
-        // Si es true, pasa en verde y sos un campeón.
         assert!(es_valido, "El hash SHA-1 no coincide... La desencriptación falló!!!");
     }
 }
