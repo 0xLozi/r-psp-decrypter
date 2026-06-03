@@ -69,6 +69,13 @@ impl PrxType1 {
         &self.data[0xD0..0x150]
     }    
 
+    // SHA_CTX ctx;
+    // SHAInit(&ctx);
+    // SHAUpdate(&ctx, xorbuf.data(), 0x14);
+    // SHAUpdate(&ctx, type1.unused, sizeof(type1.unused));
+    // SHAUpdate(&ctx, type1.kirkBlock, sizeof(type1.kirkBlock));
+    // SHAUpdate(&ctx, type1.prxHeader, sizeof(type1.prxHeader));
+
     pub fn is_valid(&self, xorbuf: &[u8]) -> bool {
         let mut hasher = Sha1::new();
 
@@ -77,9 +84,68 @@ impl PrxType1 {
         hasher.update(self.kirk_block());
         hasher.update(self.prx_header());
 
-        let hash_calculado = hasher.finalize();
+        let hash_calculated = hasher.finalize();
 
-        hash_calculado[..] == self.sha1()[..]
+        hash_calculated[..] == self.sha1()[..]
     }
 
+}
+
+use crate::keys_service;
+use crate::tag_info::{KeyType, TAG_INFO, TAG_INFO2};
+
+#[cfg(test)]
+mod tests {
+    use super::*; // Importamos PrxType1 y demas
+    use std::fs::File;
+    use std::io::Read;
+
+    #[test]
+    fn test_lego_batman_type1_valido() {
+        let ruta_eboot = "/home/snake/Downloads/lego_batman_game/PSP_GAME/SYSDIR/EBOOT.BIN";
+        
+        let mut file = File::open(ruta_eboot)
+            .expect("¡No se pudo abrir el EBOOT! Revisá la ruta.");
+        
+        // We read the entire file into de mem (this is a test, so it doesn't matter if it waste RAM)
+        let mut eboot_data = Vec::new();
+        file.read_to_end(&mut eboot_data).unwrap();
+
+
+        // We create our own structure 
+        let mut type1 = PrxType1::new(&eboot_data);
+
+        let tag_bytes: [u8; 4] = type1.tag().try_into().expect("El Tag no tiene 4 bytes");
+        let tag_real = u32::from_le_bytes(tag_bytes); // Esto será 0xC0CB167C automáticamente
+
+        let key_eboot = keys_service::get_tag_info(tag_real)
+            .expect("¡El Tag de este juego no está en la base de datos de keys_service!");
+
+        let key_id = key_eboot.code as i32;
+       
+        let mut xorbuf = [0u8; 144];
+
+        match &key_eboot.key {
+            KeyType::U8(key_array) => {
+                xorbuf.copy_from_slice(*key_array);
+            }
+            KeyType::U32(key_array) => {
+                for (i, &word) in key_array.iter().enumerate() {
+                    let start = i * 4;
+                    let end = start + 4;
+                    xorbuf[start..end].copy_from_slice(&word.to_le_bytes());
+                }
+            }
+        }
+
+        // 3. ¡Desencriptamos!
+        type1.decrypt(key_id).expect("El motor AES falló miserablemente");
+
+        // 4. EL MOMENTO DE LA VERDAD
+        let es_valido = type1.is_valid(&xorbuf);
+
+        // Si es_valido es false, Rust tira Panic y el test se pone rojo.
+        // Si es true, pasa en verde y sos un campeón.
+        assert!(es_valido, "El hash SHA-1 no coincide... La desencriptación falló!!!");
+    }
 }
