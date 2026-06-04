@@ -91,6 +91,71 @@ impl PrxType1 {
 
 }
 
+pub struct PrxType2 {
+    pub data: [u8; 0x150],
+}
+
+impl PrxType2 {
+    pub fn new(prx: &[u8]) -> Self {
+        let mut data = [0u8; 0x150];
+        // 1. tag: Offset 0xD0 (C++: prx+0xD0)
+        data[0..0x04].copy_from_slice(&prx[0xD0..0xD4]);
+        
+        // 3. id: Offset 0x140 (C++: prx+0x140)
+        data[0x5C..0x6C].copy_from_slice(&prx[0x140..0x150]);
+        
+        // 4. sha1: Offset 0x12C (C++: prx+0x12C)
+        data[0x6C..0x80].copy_from_slice(&prx[0x12C..0x140]);
+        
+        // 5. kirkHeader: Este venía partido al medio en el C++ original
+        // Primera parte (tamaño 0x30 / 48 bytes)
+        data[0x80..0xB0].copy_from_slice(&prx[0x80..0xB0]);
+        // Segunda parte (tamaño 0x10 / 16 bytes)
+        data[0xB0..0xC0].copy_from_slice(&prx[0xC0..0xD0]);
+        
+        // 6. kirkMetadata: Offset 0xB0 (C++: prx+0xB0)
+        data[0xC0..0xD0].copy_from_slice(&prx[0xB0..0xC0]);
+        
+        // 7. prxHeader: Offset 0 (C++: prx)
+        data[0xD0..0x150].copy_from_slice(&prx[0..0x80]);
+
+        Self { data }
+    }
+
+    pub fn decrypt(&mut self, key_id: i32) -> Result<(), KirkError> {
+        // En C++ la firma era: kirk7(id, id, 0x60, key);
+        // Sabemos por nuestra tabla que 'id' empieza en el byte 0x5C.
+        // Si queremos desencriptar 96 bytes (0x60): 0x5C + 0x60 = 0xBC.
+        
+        kirk7(&mut self.data[0x5C..0xBC], key_id)?;
+        
+        Ok(())
+    }
+
+    pub fn tag(&self) -> &[u8] {
+        &self.data[0..0x04]
+    }
+
+    pub fn id(&self) -> &[u8] {
+        &self.data[0x5C..0x6C]
+    }
+
+    pub fn sha1(&self) -> &[u8] {
+        &self.data[0x6C..0x80]
+    }
+
+    pub fn kirk_header(&self) -> &[u8] {
+        &self.data[0x80..0xC0]
+    }
+
+    pub fn prx_header(&self) -> &[u8] {
+        &self.data[0xD0..0x150]
+    }
+}
+
+
+
+
 use crate::keys_service;
 use crate::tag_info::{KeyType, TAG_INFO, TAG_INFO2};
 
