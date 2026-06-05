@@ -98,25 +98,25 @@ pub struct PrxType2 {
 impl PrxType2 {
     pub fn new(prx: &[u8]) -> Self {
         let mut data = [0u8; 0x150];
-        // 1. tag: Offset 0xD0 (C++: prx+0xD0)
+        // tag: Offset 0xD0 (C++: prx+0xD0)
         data[0..0x04].copy_from_slice(&prx[0xD0..0xD4]);
         
-        // 3. id: Offset 0x140 (C++: prx+0x140)
+        // id: Offset 0x140 (C++: prx+0x140)
         data[0x5C..0x6C].copy_from_slice(&prx[0x140..0x150]);
         
-        // 4. sha1: Offset 0x12C (C++: prx+0x12C)
+        // sha1: Offset 0x12C (C++: prx+0x12C)
         data[0x6C..0x80].copy_from_slice(&prx[0x12C..0x140]);
         
-        // 5. kirkHeader: Este venía partido al medio en el C++ original
+        // kirkHeader: Este venía partido al medio en el C++ original
         // Primera parte (tamaño 0x30 / 48 bytes)
         data[0x80..0xB0].copy_from_slice(&prx[0x80..0xB0]);
         // Segunda parte (tamaño 0x10 / 16 bytes)
         data[0xB0..0xC0].copy_from_slice(&prx[0xC0..0xD0]);
         
-        // 6. kirkMetadata: Offset 0xB0 (C++: prx+0xB0)
+        // kirkMetadata: Offset 0xB0 (C++: prx+0xB0)
         data[0xC0..0xD0].copy_from_slice(&prx[0xB0..0xC0]);
         
-        // 7. prxHeader: Offset 0 (C++: prx)
+        // prxHeader: Offset 0 (C++: prx)
         data[0xD0..0x150].copy_from_slice(&prx[0..0x80]);
 
         Self { data }
@@ -148,6 +148,62 @@ impl PrxType2 {
         &self.data[0x80..0xC0]
     }
 
+    pub fn prx_header(&self) -> &[u8] {
+        &self.data[0xD0..0x150]
+    }
+}
+
+
+pub struct PrxType0 {
+    data: [u8;0x150],
+}
+    // Code from C
+    // memcpy(tag, prx+0xD0, sizeof(tag));
+    // memcpy(sha1, prx+0xD4, sizeof(sha1));
+    // memcpy(unused, prx+0xE8, sizeof(unused));
+    // memcpy(kirkBlock, prx+0x110, 0x40); // key data
+    // memcpy(kirkBlock+0x40, prx+0x80, sizeof(kirkBlock)-0x40);
+    // memcpy(prxHeader, prx, sizeof(prxHeader));
+	// u8 tag[4];
+	// u8 sha1[0x14];
+	// u8 unused[0x28];
+	// u8 kirkBlock[0x90];
+	// u8 prxHeader[0x80];
+
+
+impl PrxType0 {
+    pub fn new(prx: &[u8]) -> Self {
+        let mut data = [0u8;0x150];
+        data[0..4].copy_from_slice(&prx[0xD0..0xD0+4]);
+        data[4..0x18].copy_from_slice(&prx[0xD4.. 0xD4+0x14]);
+        data[0x18..0x40].copy_from_slice(&prx[0xE8.. 0xE8 + 0x28]);
+        data[0x40..0x80].copy_from_slice(&prx[0x110..0x110 + 0x40]);
+        data[0x80..0xD0].copy_from_slice(&prx[0x80..0xD0]);
+        data[0xD0..0x150].copy_from_slice(&prx[0..0x80]);
+
+        Self { data }
+    }
+    /// Devuelve los 4 bytes del Tag
+    pub fn tag(&self) -> &[u8] {
+        &self.data[0..4]
+    }
+
+    /// Devuelve los 20 bytes del SHA-1 original
+    pub fn sha1(&self) -> &[u8] {
+        &self.data[4..0x18]
+    }
+
+    /// Devuelve los 40 bytes sin usar
+    pub fn unused(&self) -> &[u8] {
+        &self.data[0x18..0x40]
+    }
+
+    /// Devuelve el bloque de KIRK entero (Los 144 bytes unidos)
+    pub fn kirk_block(&self) -> &[u8] {
+        &self.data[0x40..0xD0]
+    }
+
+    /// Devuelve la cabecera final del PRX
     pub fn prx_header(&self) -> &[u8] {
         &self.data[0xD0..0x150]
     }
