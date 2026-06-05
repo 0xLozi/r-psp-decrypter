@@ -1,4 +1,4 @@
-use crate::error_handling::errors::{KirkError};
+use crate::error_handling::errors::{KirkError, PspError};
 use crate::kirk_lib::kirk_engine::kirk7;
 use sha1::{Sha1, Digest};
 
@@ -207,8 +207,188 @@ impl PrxType0 {
     pub fn prx_header(&self) -> &[u8] {
         &self.data[0xD0..0x150]
     }
+
+    pub fn decrypt(&mut self, xorbuf: &[u8], key_id: i32) -> Result<(), KirkError> {
+        // En el Tipo 0, el bloque a desencriptar arranca en el offset 0x40 (kirk_block)
+        let inicio = 0x40;
+        
+        // (XOR antes de desencriptar)
+        for i in 0..0x70 {
+            self.data[inicio + i] ^= xorbuf[i + 0x14];
+        }
+
+        // 2. La carne (KIRK7 procesa 112 bytes / 0x70)
+        kirk7(&mut self.data[inicio..inicio + 0x70], key_id)?;
+
+        // 3. Pan de abajo (XOR después de desencriptar)
+        for i in 0..0x70 {
+            self.data[inicio + i] ^= xorbuf[i + 0x20];
+        }
+
+        Ok(())
+    }
+
+    /// Valida matemáticamente que la desencriptación fue exitosa
+    pub fn is_valid(&self, xorbuf: &[u8]) -> bool {
+        use sha1::{Sha1, Digest};
+        let mut hasher = Sha1::new();
+
+        // La misma receta de licuadora que el Tipo 1
+        hasher.update(&xorbuf[0..0x14]);
+        hasher.update(self.unused());
+        hasher.update(self.kirk_block());
+        hasher.update(self.prx_header());
+
+        let hash_calculado = hasher.finalize();
+
+        // Comparamos el resultado con el SHA-1 original del archivo
+        hash_calculado[..] == self.sha1()[..]
+    }
 }
 
+struct PrxType5 {
+    data: [u8;0x150],
+}
+
+impl PrxType5 {
+
+    pub fn new(prx: &[u8]) -> Self {
+        let mut data = [0u8; 0x150];
+        
+        // 1. tag
+        data[0..0x04].copy_from_slice(&prx[0xD0..0xD4]);
+        // 2. empty (0x58 bytes de ceros, ya los tiene por inicialización)
+        // 3. id
+        data[0x5C..0x6C].copy_from_slice(&prx[0x140..0x150]);
+        // 4. sha1
+        data[0x6C..0x80].copy_from_slice(&prx[0x12C..0x140]);
+        // 5. kirkHeader (partido en dos)
+        data[0x80..0xB0].copy_from_slice(&prx[0x80..0xB0]);
+        data[0xB0..0xC0].copy_from_slice(&prx[0xC0..0xD0]);
+        // 6. kirkMetadata
+        data[0xC0..0xD0].copy_from_slice(&prx[0xB0..0xC0]);
+        // 7. prxHeader
+        data[0xD0..0x150].copy_from_slice(&prx[0..0x80]);
+
+        Self { data }
+    }
+
+    pub fn tag(&self) -> &[u8] {
+        &self.data[0..0x04]
+    }
+
+    pub fn id(&self) -> &[u8] {
+        &self.data[0x5C..0x6C]
+    }
+
+    pub fn sha1(&self) -> &[u8] {
+        &self.data[0x6C..0x80]
+    }
+
+    pub fn kirk_header(&self) -> &[u8] {
+        &self.data[0x80..0xC0]
+    }
+
+    pub fn prx_header(&self) -> &[u8] {
+        &self.data[0xD0..0x150]
+    }   
+
+
+    pub fn decrypt(&mut self, key_id: i32, xor1: Option<&[u8]>, xor2: Option<&[u8]>) -> Result<(), KirkError> {
+        let mut temp_data: [u8;0x50] = [0u8;0x50];
+        temp_data[0..0x40].copy_from_slice(self.kirk_header());
+        temp_data[0x40..0x40+0x10].copy_from_slice(&self.sha1()[0..0x10]);
+
+        for i in 0..0x50 {
+            if let Some(k1) = xor1 {
+                // I do unwrap because is not None, therefore it'll never be Exception Error
+                temp_data[i] ^= k1[i % 0x10];
+            }
+
+            if let Some(k2) = xor2 {
+                temp_data[i] ^= xor2.unwrap()[i%0x10];
+            }
+        }
+        kirk7(&mut temp_data, key_id)?;
+
+        // I FORGOT TO COPY THE RESULT BACK
+        self.data[0x80..0xC0].copy_from_slice(&temp_data[0..0x40]);
+        self.data[0x6C..0x7C].copy_from_slice(&temp_data[0x40..0x50]);
+
+        // copied comment from the original source
+        // second step is a XOR then decrypt id through to kirk header
+
+        // 'id' empieza en 0x5C, lo sabemos por los getters...
+        let inicio = 0x5C;
+        let fin = inicio + 0x60;
+
+        if let Some(k1) = xor1 {
+            // Hace XOR sobre los 96 bytes de la memoria principal
+            for i in 0..0x60 {
+                self.data[inicio + i] ^= k1[i % 0x10];
+            }
+        }       
+
+        // Segunda pasada del AES directo sobre la memoria principal
+        kirk7(&mut self.data[inicio..fin], key_id)?;
+
+        Ok(())
+    }
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+// static void decryptKirkHeader(u8 *outbuf, const u8 *inbuf, It xorbuf, int key)
+// {
+// 	for (auto i = 0; i < 0x40; ++i)
+// 	{
+// 		outbuf[i] = inbuf[i] ^ *xorbuf++;
+// 	}
+
+// 	kirk7(outbuf, outbuf, 0x40, key);
+
+// 	for (auto i = 0; i < 0x40; ++i)
+// 	{
+// 		outbuf[i] = outbuf[i] ^ *xorbuf++;
+// 	}
+// }
+pub fn decrypt_kirk_header(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8], key_id: i32) -> Result<(), KirkError>{
+    for i in (0..0x40) {
+        outbuf[i] = inbuf[i] ^ xorbuf[i];
+    }
+
+    kirk7(&mut outbuf[0..0x40], key_id)?;
+
+    for i in 0..0x40 {
+        outbuf[i] ^= xorbuf[0x40+i];
+    }
+
+    Ok(())
+}
+
+pub fn decrypt_kirk_header_type_0(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8], key_id: i32) -> Result<(), KirkError> {
+    for i in (0..0x70) {
+        outbuf[i] = inbuf[i] ^ xorbuf[i+0x14];
+    }
+
+    kirk7(outbuf, key_id);
+
+    for i in (0..0x70) { 
+        outbuf[i] ^= xorbuf[0x20+i];
+    }
+
+    Ok(())
+}
 
 
 

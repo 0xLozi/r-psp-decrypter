@@ -1,6 +1,5 @@
 use clap::Parser;
 use std::fs;
-mod prx_decrypt;
 mod keys;
 mod tag_info;
 mod keys_service;
