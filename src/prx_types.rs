@@ -306,7 +306,7 @@ impl PrxType5 {
             }
 
             if let Some(k2) = xor2 {
-                temp_data[i] ^= xor2.unwrap()[i%0x10];
+                temp_data[i] ^= k2[i%0x10];
             }
         }
         kirk7(&mut temp_data, key_id)?;
