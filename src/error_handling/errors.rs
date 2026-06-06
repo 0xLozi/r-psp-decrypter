@@ -13,6 +13,21 @@ pub enum PspError {
     
     #[error("Error al convertir slice: {0}")]
     SliceConversion(#[from] std::array::TryFromSliceError),
+
+    #[error("Error al intentar leer el size del archivo...")]
+    SizeError,
+
+    #[error("Error al referenciar un puntero")]
+    PointerError,
+
+    #[error("Error al encontrar el Tag o Tag invalido")]
+    TagNotFound,
+
+    #[error("La validación ha sido un fracaso...")]
+    ValidationFailed,
+
+    #[error("Header decryption failed...")]
+    HeaderDecryptionFailed,
 }
 
 

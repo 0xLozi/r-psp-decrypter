@@ -1,6 +1,7 @@
 use crate::error_handling::errors::{KirkError, PspError};
 use crate::kirk_lib::kirk_engine::kirk7;
 use sha1::{Sha1, Digest};
+use crate::keys_service::{get_tag_info, get_tag_info_2};
 
 /// Representa la cabecera de un archivo PRX o EBOOT de Tipo 1 (Ej: Lego Batman).
 ///
@@ -411,6 +412,64 @@ impl PrxType6 {
         
         Ok(())
     }
+}
+
+
+pub fn psp_decrypt_type0(inbuf: &[u8], outbuf: &mut [u8]) -> Result<(), PspError> {
+    // const auto decryptSize = *(s32_le*)&inbuf[0xB0];
+    // let decrypt_size_bytes: &[u8;4]= inbuf[0xB0..0xB4].try_into().map_err(|_| PspError::SizeError)?;
+    // let decrypt_size = u32::from_le_bytes(*decrypt_size_bytes);
+
+    let decrypt_size = u32::from_le_bytes(
+        inbuf[0xB0..0xB4]
+        .try_into().map_err(|_| PspError::SizeError)?
+    );
+    println!("Tamaño a desencriptar: {} bytes", decrypt_size);
+
+    // let tag_bytes:&[u8;4]= inbuf[0xD0..0xD0+4].try_into().map_err(|_| PspError::PointerError)?;
+    // let tag = u32::from_le_bytes(*tag_bytes);
+    // more compact like this hehehe
+    let tag = u32::from_le_bytes(
+        inbuf[0xD0..0xD0+4]
+        .try_into().map_err(|_| PspError::PointerError)?
+    );
+
+    let key_info = get_tag_info(tag).ok_or(PspError::TagNotFound)?;
+    let key_id = key_info.code as u32;
+    
+    let mut xorbuf = [0u8; 0x90];
+
+    // Now we gotta copy the key the safest way
+    match key_info.key {
+        KeyType::U8(k) => {
+            xorbuf.copy_from_slice(k);
+        }
+        KeyType::U32(k1) => {
+            for (i, &word) in k1.iter().enumerate() {
+                let start = i*4;
+                xorbuf[start..start+4].copy_from_slice(&word.to_le_bytes());
+            }
+        }
+    }
+
+    let mut type0 = PrxType0::new(inbuf);
+
+    if !type0.is_valid(&xorbuf) {
+        return Err(PspError::ValidationFailed);
+    }
+
+    let _ = type0.decrypt(&xorbuf, key_id as i32)
+    .map_err(|_| PspError::HeaderDecryptionFailed);
+
+    if inbuf.as_ptr() != outbuf.as_ptr() {
+        let size = inbuf.len();
+        outbuf[..size].copy_from_slice(inbuf);
+    }
+
+    // TODO: Payload (KIRK_CMD1)
+
+
+    Ok(())
 }
 
 
