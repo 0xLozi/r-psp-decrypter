@@ -458,8 +458,8 @@ pub fn psp_decrypt_type0(inbuf: &[u8], outbuf: &mut [u8]) -> Result<(), PspError
         return Err(PspError::ValidationFailed);
     }
 
-    let _ = type0.decrypt(&xorbuf, key_id as i32)
-    .map_err(|_| PspError::HeaderDecryptionFailed);
+    type0.decrypt(&xorbuf, key_id as i32)
+    .map_err(|_| PspError::HeaderDecryptionFailed)?;
 
     if inbuf.as_ptr() != outbuf.as_ptr() {
         let size = inbuf.len();
