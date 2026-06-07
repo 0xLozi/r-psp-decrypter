@@ -1,5 +1,5 @@
 use crate::error_handling::errors::{KirkError, PspError};
-use crate::kirk_lib::kirk_engine::kirk7;
+use crate::kirk_lib::kirk_engine::{kirk7, kirk_cmd1_decrypt};
 use sha1::{Sha1, Digest};
 use crate::keys_service::{get_tag_info, get_tag_info_2};
 use crate::kirk_lib::kirk_headers::KirkCmd1Header;
@@ -461,7 +461,8 @@ pub fn psp_decrypt_type0(inbuf: &mut [u8]) -> Result<(), PspError> {
     let payload = &mut inbuf[psp_header_size..psp_header_size+size];
 
     // TODO: Payload (KIRK_CMD1)
-    // kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)?;
+    kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
+    .map_err(|_| PspError::DecryptionFailed)?;
 
     Ok(())
 }
@@ -534,7 +535,7 @@ use crate::tag_info::{KeyType, TAG_INFO, TAG_INFO2};
 mod tests {
     use super::*; // Importamos PrxType1 y demas
     use std::fs::File;
-    use std::io::Read;
+    use std::io::{Read, Write};
 
     #[test]
     fn test_lego_batman_type1_valido() {
@@ -580,5 +581,47 @@ mod tests {
         let es_valido = type1.is_valid(&xorbuf);
 
         assert!(es_valido, "El hash SHA-1 no coincide... La desencriptación falló!!!");
+    }
+
+    #[test]
+    fn test_decryption_type0_succeed() -> Result<(), PspError> {
+        let ruta_eboot = "/home/snake/Downloads/lumine/lumines/lumines_game/PSP_GAME/SYSDIR/EBOOT.BIN";
+        let ruta_salida = "/home/snake/Downloads/lumine/lumines/lumines_game/PSP_GAME/SYSDIR/EBOOT.BIN.dec";
+        
+        let mut file = File::open(ruta_eboot)
+            .expect("No se pudo abrir el EBOOT! Revisá la ruta.");
+        
+        // We read the entire file into de mem (this is a test, so it doesn't matter if it waste RAM)
+        let mut eboot_data = Vec::new();
+        file.read_to_end(&mut eboot_data).unwrap();
+
+        let resultado = psp_decrypt_type0(&mut eboot_data);
+
+        assert!(
+            resultado.is_ok(), 
+            "La desencriptación del Tipo 0 fallo con el error: {:?}", 
+            resultado.err().unwrap()
+        );
+
+        let psp_header_size = 0x150;
+        let magic_bytes = &eboot_data[psp_header_size .. psp_header_size + 4];
+
+        println!("Magic bytes encontrados tras desencriptar: {:?}", magic_bytes);
+
+        let is_elf = magic_bytes == [0x7F, 0x45, 0x4C, 0x46]; // .ELF
+        let is_psp = magic_bytes == [0x7E, 0x50, 0x53, 0x50]; // ~PSP
+
+        assert!(
+            is_elf || is_psp, 
+            "El archivo parece ser basura. Magic Bytes: {:?}", 
+            magic_bytes
+        );
+        let mut out_file = File::create(ruta_salida)
+            .expect("No se pudo crear el archivo EBOOT.BIN.dec");
+
+        out_file.write_all(&eboot_data).map_err(|_| PspError::DecryptionFailed)?;
+
+        println!("¡Archivo desencriptado guardado con éxito en: {}", ruta_salida);
+        Ok(())
     }
 }

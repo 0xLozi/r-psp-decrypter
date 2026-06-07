@@ -31,6 +31,9 @@ pub enum PspError {
 
     #[error("This is an invalid mode")]
     InvalidMode,
+
+    #[error("La desencriptación falló")]
+    DecryptionFailed,
 }
 
 

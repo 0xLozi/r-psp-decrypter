@@ -202,3 +202,32 @@ pub fn kirk7(expanded_seed: &mut [u8], key_id: i32) -> Result<(), KirkError> {
     .map_err(|_| KirkError::DecryptionFailed)?;
     Ok(())
 }
+
+
+pub fn kirk_cmd1_decrypt (
+    encrypted_aes_key: &[u8], // 16 bytes cmd1_header.aes_key()
+    encrypted_cmac_key: &[u8], // 16 bytes cmd1_header.cmac_key()
+    payload: &mut [u8], // The game 
+) -> Result<(), KirkError>{
+    let iv = [0u8; 16]; // Inside the chip KIRK always 0
+
+    // decryption start!!!
+    let mut keys_buffer = [0u8; 32];
+    keys_buffer[0..16].copy_from_slice(encrypted_aes_key);
+    keys_buffer[16..32].copy_from_slice(encrypted_cmac_key);
+
+    let decryptor_keys = Aes128CbcDec::new(&KIRK1_KEY.into(), &iv.into());
+
+    decryptor_keys.decrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(&mut keys_buffer)
+        .map_err(|_| KirkError::DecryptionFailed)?;
+
+    let clean_aes_key = &keys_buffer[0..16];
+    let _clean_cmac_key = &keys_buffer[16..32]; // We don't need to use it, only if I want to verify ECDSA 
+
+    let decryptor_payload = Aes128CbcDec::new(clean_aes_key.into(), &iv.into());
+
+    decryptor_payload.decrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(payload)
+        .map_err(|_| KirkError::DecryptionFailed)?;
+
+    Ok(())
+}
