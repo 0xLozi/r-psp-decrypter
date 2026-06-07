@@ -28,6 +28,9 @@ pub enum PspError {
 
     #[error("Header decryption failed...")]
     HeaderDecryptionFailed,
+
+    #[error("This is an invalid mode")]
+    InvalidMode,
 }
 
 

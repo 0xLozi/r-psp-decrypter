@@ -2,6 +2,7 @@ use crate::error_handling::errors::{KirkError, PspError};
 use crate::kirk_lib::kirk_engine::kirk7;
 use sha1::{Sha1, Digest};
 use crate::keys_service::{get_tag_info, get_tag_info_2};
+use crate::kirk_lib::kirk_headers::KirkCmd1Header;
 
 /// Representa la cabecera de un archivo PRX o EBOOT de Tipo 1 (Ej: Lego Batman).
 ///
@@ -434,16 +435,7 @@ pub fn psp_decrypt_type0(inbuf: &mut [u8]) -> Result<(), PspError> {
     let mut xorbuf = [0u8; 0x90];
 
     // Now we gotta copy the key the safest way
-    match key_info.key {
-        KeyType::U8(k) => {
-            xorbuf.copy_from_slice(k);
-        }
-        KeyType::U32(k1) => {
-            for (i, &word) in k1.iter().enumerate() {
-                let start = i*4;
-                xorbuf[start..start+4].copy_from_slice(&word.to_le_bytes());
-            }
-        }
+    match key_info.key { KeyType::U8(k) => { xorbuf.copy_from_slice(k); } KeyType::U32(k1) => { for (i, &word) in k1.iter().enumerate() { let start = i*4; xorbuf[start..start+4].copy_from_slice(&word.to_le_bytes()); } }
     }
 
     let mut type0 = PrxType0::new(inbuf);
@@ -456,9 +448,20 @@ pub fn psp_decrypt_type0(inbuf: &mut [u8]) -> Result<(), PspError> {
     type0.decrypt_header(&xorbuf, key_id as i32)
     .map_err(|_| PspError::HeaderDecryptionFailed)?;
 
+    let kirk_cmd = KirkCmd1Header::new(type0.kirk_block());
+
+    if kirk_cmd.mode().map_err(|_| PspError::ValidationFailed)? != 1 {
+        return Err(PspError::InvalidMode)
+    }
+
+    let size = kirk_cmd.data_size().map_err(|_| PspError::ValidationFailed)? as usize;
+
+    let psp_header_size = 0x150;
+
+    let payload = &mut inbuf[psp_header_size..psp_header_size+size];
 
     // TODO: Payload (KIRK_CMD1)
-
+    // kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)?;
 
     Ok(())
 }
