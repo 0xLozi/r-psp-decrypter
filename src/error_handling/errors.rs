@@ -40,4 +40,7 @@ pub enum KirkError {
     /// Ocurre cuando el bloque de memoria no es múltiplo de 16 para AES
     #[error("El bloque de memoria no es múltiplo de 16 para AES")]
     DecryptionFailed,
+
+    #[error("The conversion failed...")]
+    ConversionFailed,
 }

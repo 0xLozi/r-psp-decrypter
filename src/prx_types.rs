@@ -35,7 +35,7 @@ impl PrxType1 {
         Self { data }
     }
 
-    pub fn decrypt(&mut self, key_id: i32) -> Result<(), KirkError> {
+    pub fn decrypt_header(&mut self, key_id: i32) -> Result<(), KirkError> {
         // En C++ la firma era: kirk7(sha1+0xC, sha1+0xC, 0xA0, key);
         // Nuestro 'sha1' empieza en el offset 4.
         // 4 + 12 (0xC) = 16 (0x10).
@@ -123,7 +123,7 @@ impl PrxType2 {
         Self { data }
     }
 
-    pub fn decrypt(&mut self, key_id: i32) -> Result<(), KirkError> {
+    pub fn decrypt_header(&mut self, key_id: i32) -> Result<(), KirkError> {
         // En C++ la firma era: kirk7(id, id, 0x60, key);
         // Sabemos por nuestra tabla que 'id' empieza en el byte 0x5C.
         // Si queremos desencriptar 96 bytes (0x60): 0x5C + 0x60 = 0xBC.
@@ -209,7 +209,7 @@ impl PrxType0 {
         &self.data[0xD0..0x150]
     }
 
-    pub fn decrypt(&mut self, xorbuf: &[u8], key_id: i32) -> Result<(), KirkError> {
+    pub fn decrypt_header(&mut self, xorbuf: &[u8], key_id: i32) -> Result<(), KirkError> {
         // En el Tipo 0, el bloque a desencriptar arranca en el offset 0x40 (kirk_block)
         let inicio = 0x40;
         
@@ -229,7 +229,7 @@ impl PrxType0 {
         Ok(())
     }
 
-    /// Valida matemáticamente que la desencriptación fue exitosa
+    /// Valida matemáticamente que la llave es correcta y los datos están íntegros ANTES de desencriptar.
     pub fn is_valid(&self, xorbuf: &[u8]) -> bool {
         use sha1::{Sha1, Digest};
         let mut hasher = Sha1::new();
@@ -295,7 +295,7 @@ impl PrxType5 {
     }   
 
 
-    pub fn decrypt(&mut self, key_id: i32, xor1: Option<&[u8]>, xor2: Option<&[u8]>) -> Result<(), KirkError> {
+    pub fn decrypt_header(&mut self, key_id: i32, xor1: Option<&[u8]>, xor2: Option<&[u8]>) -> Result<(), KirkError> {
         let mut temp_data: [u8;0x50] = [0u8;0x50];
         temp_data[0..0x40].copy_from_slice(self.kirk_header());
         temp_data[0x40..0x40+0x10].copy_from_slice(&self.sha1()[0..0x10]);
@@ -403,7 +403,7 @@ impl PrxType6 {
     }   
 
     // DECRYPT
-    pub fn decrypt(&mut self, key_id: i32) -> Result<(), KirkError> {
+    pub fn decrypt_header(&mut self, key_id: i32) -> Result<(), KirkError> {
         // kirk7(id, id, 0x60, key);
         let inicio = 0x5C;
         let fin = inicio + 0x60;
@@ -415,10 +415,7 @@ impl PrxType6 {
 }
 
 
-pub fn psp_decrypt_type0(inbuf: &[u8], outbuf: &mut [u8]) -> Result<(), PspError> {
-    // const auto decryptSize = *(s32_le*)&inbuf[0xB0];
-    // let decrypt_size_bytes: &[u8;4]= inbuf[0xB0..0xB4].try_into().map_err(|_| PspError::SizeError)?;
-    // let decrypt_size = u32::from_le_bytes(*decrypt_size_bytes);
+pub fn psp_decrypt_type0(inbuf: &mut [u8]) -> Result<(), PspError> {
 
     let decrypt_size = u32::from_le_bytes(
         inbuf[0xB0..0xB4]
@@ -426,9 +423,6 @@ pub fn psp_decrypt_type0(inbuf: &[u8], outbuf: &mut [u8]) -> Result<(), PspError
     );
     println!("Tamaño a desencriptar: {} bytes", decrypt_size);
 
-    // let tag_bytes:&[u8;4]= inbuf[0xD0..0xD0+4].try_into().map_err(|_| PspError::PointerError)?;
-    // let tag = u32::from_le_bytes(*tag_bytes);
-    // more compact like this hehehe
     let tag = u32::from_le_bytes(
         inbuf[0xD0..0xD0+4]
         .try_into().map_err(|_| PspError::PointerError)?
@@ -458,13 +452,10 @@ pub fn psp_decrypt_type0(inbuf: &[u8], outbuf: &mut [u8]) -> Result<(), PspError
         return Err(PspError::ValidationFailed);
     }
 
-    type0.decrypt(&xorbuf, key_id as i32)
+    // Con esto conseguimos el preciado kirk header desencriptado
+    type0.decrypt_header(&xorbuf, key_id as i32)
     .map_err(|_| PspError::HeaderDecryptionFailed)?;
 
-    if inbuf.as_ptr() != outbuf.as_ptr() {
-        let size = inbuf.len();
-        outbuf[..size].copy_from_slice(inbuf);
-    }
 
     // TODO: Payload (KIRK_CMD1)
 
@@ -474,29 +465,6 @@ pub fn psp_decrypt_type0(inbuf: &[u8], outbuf: &mut [u8]) -> Result<(), PspError
 
 
 
-
-
-
-
-
-
-
-
-
-// static void decryptKirkHeader(u8 *outbuf, const u8 *inbuf, It xorbuf, int key)
-// {
-// 	for (auto i = 0; i < 0x40; ++i)
-// 	{
-// 		outbuf[i] = inbuf[i] ^ *xorbuf++;
-// 	}
-
-// 	kirk7(outbuf, outbuf, 0x40, key);
-
-// 	for (auto i = 0; i < 0x40; ++i)
-// 	{
-// 		outbuf[i] = outbuf[i] ^ *xorbuf++;
-// 	}
-// }
 pub fn decrypt_kirk_header(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8], key_id: i32) -> Result<(), KirkError>{
     for i in (0..0x40) {
         outbuf[i] = inbuf[i] ^ xorbuf[i];
@@ -525,6 +493,35 @@ pub fn decrypt_kirk_header_type_0(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8]
     Ok(())
 }
 
+// 144 bytes just to make it clear
+pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) -> Result<[u8; 0x90], KirkError> {
+    let mut expanded_seed = [0u8; 0x90];
+
+    // Lógica para la expansión de la seed
+    // Vamos saltando de 16 a 16, comenzando desde el principio
+    // En C++, hacían un for (auto i = 0u; i < expandedSeed.size(); i += 0x10)
+    for i in (0..0x90).step_by(0x10) {
+        expanded_seed[i..i+0x10].copy_from_slice(seed);
+        // Despues modificamos el primer byte de este bloque para que actúe como contador
+        expanded_seed[i] = (i / 0x10) as u8;
+    }
+
+    // TODO: Implementar kirk7. 
+    // En C++ sería: kirk7(expandedSeed.data(), expandedSeed.data(), expandedSeed.size(), key);
+    // En Rust sería algo parecido a esto:
+    kirk7(&mut expanded_seed, key)?;
+
+    if let Some(bonus) = bonus_seed {
+        // Recorremos los 144 bytes de la semilla ya expandida y encriptada
+        for i in 0..0x90 {
+            // Hacemos un XOR (^=) entre el byte actual y el byte correspondiente del bonus.
+            // Como el bonus solo tiene 16 bytes, usamos el módulo (%) para que repita del 0 al 15
+            expanded_seed[i] ^= bonus[i % 0x10];
+        }
+    }
+    // Retornamos el arreglo estático
+    Ok(expanded_seed)
+}
 
 
 use crate::keys_service;
@@ -575,7 +572,7 @@ mod tests {
         }
 
         // Decrypt
-        type1.decrypt(key_id).expect("El motor AES falló...");
+        type1.decrypt_header(key_id).expect("El motor AES falló...");
 
         let es_valido = type1.is_valid(&xorbuf);
 
