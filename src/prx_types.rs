@@ -416,7 +416,7 @@ impl PrxType6 {
 }
 
 
-pub fn psp_decrypt_type0(inbuf: &mut [u8]) -> Result<(), PspError> {
+pub fn psp_decrypt_type0(inbuf: &mut [u8]) -> Result<usize, PspError> {
 
     let decrypt_size = u32::from_le_bytes(
         inbuf[0xB0..0xB4]
@@ -455,16 +455,15 @@ pub fn psp_decrypt_type0(inbuf: &mut [u8]) -> Result<(), PspError> {
     }
 
     let size = kirk_cmd.data_size().map_err(|_| PspError::ValidationFailed)? as usize;
-
     let psp_header_size = 0x150;
-
     let payload = &mut inbuf[psp_header_size..psp_header_size+size];
 
     // TODO: Payload (KIRK_CMD1)
     kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
     .map_err(|_| PspError::DecryptionFailed)?;
 
-    Ok(())
+    Ok(size)
+
 }
 
 
@@ -538,7 +537,7 @@ mod tests {
     use std::io::{Read, Write};
 
     #[test]
-    fn test_lego_batman_type1_valido() {
+    fn test_game_type1_valid() {
         let ruta_eboot = "/home/snake/Downloads/lego_batman_game/PSP_GAME/SYSDIR/EBOOT.BIN";
         
         let mut file = File::open(ruta_eboot)
@@ -603,6 +602,7 @@ mod tests {
             resultado.err().unwrap()
         );
 
+
         let psp_header_size = 0x150;
         let magic_bytes = &eboot_data[psp_header_size .. psp_header_size + 4];
 
@@ -616,10 +616,15 @@ mod tests {
             "El archivo parece ser basura. Magic Bytes: {:?}", 
             magic_bytes
         );
+
+        let decrypted_size = resultado.unwrap();
         let mut out_file = File::create(ruta_salida)
             .expect("No se pudo crear el archivo EBOOT.BIN.dec");
 
-        out_file.write_all(&eboot_data).map_err(|_| PspError::DecryptionFailed)?;
+        let psp_header_size = 0x150;
+        let elf_pure = &eboot_data[psp_header_size..psp_header_size+decrypted_size];
+
+        out_file.write_all(&elf_pure).map_err(|_| PspError::DecryptionFailed)?;
 
         println!("¡Archivo desencriptado guardado con éxito en: {}", ruta_salida);
         Ok(())
