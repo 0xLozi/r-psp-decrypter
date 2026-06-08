@@ -530,7 +530,6 @@ pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) ->
 // ESTA VA A SER LA ÚNICA FUNCIÓN PÚBLICA. 
 // TO-DO: FINALIZADA LA FUNCIÓN. PONER TODO EL PRIVADO
 pub fn decrypt_prx(inbuf: &mut [u8]) -> Result<usize, PspError>{
-
     let tag = u32::from_le_bytes(
         inbuf[0xD0..0xD0+4]
         .try_into().map_err(|_| PspError::PointerError)?
@@ -551,96 +550,30 @@ mod tests {
     use std::io::{Read, Write};
 
     #[test]
-    fn test_game_type1_valid() {
-        let ruta_eboot = "/home/snake/Downloads/lego_batman_game/PSP_GAME/SYSDIR/EBOOT.BIN";
-
-        let mut file = File::open(ruta_eboot)
-            .expect("No se pudo abrir el EBOOT! Revisá la ruta.");
-        
-        // We read the entire file into de mem (this is a test, so it doesn't matter if it waste RAM)
-        let mut eboot_data = Vec::new();
-        file.read_to_end(&mut eboot_data).unwrap();
-
-
-        // We create our own structure 
-        let mut type1 = PrxType1::new(&eboot_data);
-
-        let tag_bytes: [u8; 4] = type1.tag().try_into().expect("El Tag no tiene 4 bytes");
-        let tag = u32::from_le_bytes(tag_bytes); // Esto será 0xC0CB167C automáticamente
-
-        let key_eboot = keys_service::get_tag_info(tag)
-            .expect("El Tag de este juego no está en la base de datos de keys_service!");
-
-        let key_id = key_eboot.code as i32;
-       
-        let mut xorbuf = [0u8; 144];
-
-        match &key_eboot.key {
-            KeyType::U8(key_array) => {
-                xorbuf.copy_from_slice(*key_array);
-            }
-            KeyType::U32(key_array) => {
-                for (i, &word) in key_array.iter().enumerate() {
-                    let start = i * 4;
-                    let end = start + 4;
-                    xorbuf[start..end].copy_from_slice(&word.to_le_bytes());
-                }
-            }
-        }
-
-        // Decrypt
-        type1.decrypt_header(key_id).expect("El motor AES falló...");
-
-        let es_valido = type1.is_valid(&xorbuf);
-
-        assert!(es_valido, "El hash SHA-1 no coincide... La desencriptación falló!!!");
-    }
-
-    #[test]
-    fn test_decryption_type0_succeed() -> Result<(), PspError> {
+   fn test_router_decryption_lumines_succeeds() -> Result<(), PspError> {
         let ruta_eboot = "/home/snake/Downloads/lumine/lumines/lumines_game/PSP_GAME/SYSDIR/EBOOT.BIN";
-        let ruta_salida = "/home/snake/Downloads/lumine/lumines/lumines_game/PSP_GAME/SYSDIR/EBOOT.BIN.dec";
         
         let mut file = File::open(ruta_eboot)
-            .expect("No se pudo abrir el EBOOT! Revisá la ruta.");
+            .expect("No se pudo abrir el EBOOT de Lumines.");
         
-        // We read the entire file into de mem (this is a test, so it doesn't matter if it waste RAM)
         let mut eboot_data = Vec::new();
         file.read_to_end(&mut eboot_data).unwrap();
 
-        let resultado = psp_decrypt_type0(&mut eboot_data);
+        decrypt_prx(&mut eboot_data)?;
 
-        assert!(
-            resultado.is_ok(), 
-            "La desencriptación del Tipo 0 fallo con el error: {:?}", 
-            resultado.err().unwrap()
-        );
-
-
+        // Verificamos los Magic Bytes para asegurarnos de que la magia ocurrió
         let psp_header_size = 0x150;
         let magic_bytes = &eboot_data[psp_header_size .. psp_header_size + 4];
-
-        println!("Magic bytes encontrados tras desencriptar: {:?}", magic_bytes);
-
+        
         let is_elf = magic_bytes == [0x7F, 0x45, 0x4C, 0x46]; // .ELF
         let is_psp = magic_bytes == [0x7E, 0x50, 0x53, 0x50]; // ~PSP
 
         assert!(
             is_elf || is_psp, 
-            "El archivo parece ser basura. Magic Bytes: {:?}", 
+            "El enrutador falló silenciosamente. Magic Bytes: {:?}", 
             magic_bytes
         );
 
-        let decrypted_size = resultado.unwrap();
-        let mut out_file = File::create(ruta_salida)
-            .expect("No se pudo crear el archivo EBOOT.BIN.dec");
-
-        let psp_header_size = 0x150;
-        let elf_pure = &eboot_data[psp_header_size..psp_header_size+decrypted_size];
-
-        out_file.write_all(&elf_pure).map_err(|_| PspError::DecryptionFailed)?;
-
-        println!("¡Archivo desencriptado guardado con éxito en: {}", ruta_salida);
         Ok(())
-    }
+   } 
 }

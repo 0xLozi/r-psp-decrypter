@@ -12,17 +12,6 @@ use std::fs::File;
 use std::io::{Read, Write};
 use prx_types::decrypt_prx;
 
-/// Desencriptador de EBOOT.BIN (PRX) para PSP
-#[derive(Parser, Debug)]
-#[command(author, version, about)]
-struct Config {
-    /// Archivo de entrada (ej: EBOOT.BIN)
-    input_file: String,
-
-    /// Archivo de salida (opcional). Si no se pone, usará [input_file].dec
-    #[arg(short = 'o', long = "outfile")]
-    output_file: Option<String>,
-}
 
 fn main() -> Result<(), PspError>{
     let args: Vec<String> = std::env::args().collect();
@@ -48,7 +37,7 @@ fn main() -> Result<(), PspError>{
 
     let mut eboot_data = Vec::new();
     if let Err(e) = file.read_to_end(&mut eboot_data) {
-        eprintln!("❌ Error al leer el archivo: {}", e);
+        eprintln!("Error al leer el archivo: {}", e);
         return Err(PspError::DecryptionFailed);
     }
 
