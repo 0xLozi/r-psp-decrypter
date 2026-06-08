@@ -34,6 +34,9 @@ pub enum PspError {
 
     #[error("La desencriptación falló")]
     DecryptionFailed,
+
+    #[error("No se pudo crear el archivo")]
+    FileCreationFailed,
 }
 
 

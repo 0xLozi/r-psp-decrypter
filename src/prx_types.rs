@@ -527,6 +527,20 @@ pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) ->
 }
 
 
+// ESTA VA A SER LA ÚNICA FUNCIÓN PÚBLICA. 
+// TO-DO: FINALIZADA LA FUNCIÓN. PONER TODO EL PRIVADO
+pub fn decrypt_prx(inbuf: &mut [u8]) -> Result<usize, PspError>{
+
+    let tag = u32::from_le_bytes(
+        inbuf[0xD0..0xD0+4]
+        .try_into().map_err(|_| PspError::PointerError)?
+    );
+
+    println!("Tag detectado: 0x{:08X}", tag);
+
+    psp_decrypt_type0(inbuf)
+}
+
 use crate::keys_service;
 use crate::tag_info::{KeyType, TAG_INFO, TAG_INFO2};
 
@@ -539,7 +553,7 @@ mod tests {
     #[test]
     fn test_game_type1_valid() {
         let ruta_eboot = "/home/snake/Downloads/lego_batman_game/PSP_GAME/SYSDIR/EBOOT.BIN";
-        
+
         let mut file = File::open(ruta_eboot)
             .expect("No se pudo abrir el EBOOT! Revisá la ruta.");
         
