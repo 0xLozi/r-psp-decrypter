@@ -514,7 +514,7 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
     } 
 
 
-	//ACÁ ES DONDE COMIENZA EL ERROR....
+	//ACÁ ES DONDE COMIENZA EL ERROR.... Bueno ahora arreglado...
 
 	let mut final_kirk_block = [0u8; 0x90];
 
@@ -547,21 +547,15 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
     fake_header.copy_from_slice(type1.prx_header());
     inbuf[0xD0..0x150].copy_from_slice(&fake_header);
 
-    // ==================================================
-    // 2. ¡EL OVERLAP SECRETO! (La pieza que faltaba)
     // Sobreescribimos los primeros 80 bytes de la cabecera falsa
     // con el sobrante del bloque Kirk desencriptado.
-    // ==================================================
     inbuf[0xD0..0x120].copy_from_slice(&final_kirk_block[0x20..0x70]);
 
-    // 3. Cortamos el payload exacto para el AES
     let payload = &mut inbuf[0xD0 .. 0xD0 + padded_size];
 
-    // 4. Desencriptamos (Volvemos a usar el `?` porque ahora sí confiamos)
     kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
         .map_err(|_| PspError::DecryptionFailed)?;
 
-    // 5. Acomodamos la memoria para tu Test
     inbuf.copy_within(0xD0 .. 0xD0 + real_size, 0x150);
 
     Ok(real_size)
