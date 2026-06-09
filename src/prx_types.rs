@@ -513,6 +513,9 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
         return Err(PspError::ValidationFailed);
     } 
 
+
+	//ACÁ ES DONDE COMIENZA EL ERROR....
+
 	let mut final_kirk_block = [0u8; 0x90];
 
 	final_kirk_block.copy_from_slice(type1.kirk_block());
@@ -526,10 +529,45 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
         return Err(PspError::InvalidMode)
     }
 
-	Ok(92486)
 
-    // let size = kirk_cmd.data_size().map_err(|_| PspError::ValidationFailed)? as usize;
-	// let real_size = decrypt_size as usize;
+	// Something is weird... AES is a cipher by blocks, but &mut inbuf[0xD0..]
+	// decrypt_size = 4.109.852 bytes..... 0xD0 .. 4.109.852 is 4.109.984
+	// Difference = 132 bytes
+	// could it be excsda signature?
+	let real_size = decrypt_size as usize;
+
+	let padded_size = if real_size % 16 == 0 {
+		real_size
+	} else {
+		real_size + (16 - (real_size % 16))
+	};
+
+	// 1. Pegamos la cabecera falsa en 0xD0..0x150
+    let mut fake_header = [0u8; 0x80];
+    fake_header.copy_from_slice(type1.prx_header());
+    inbuf[0xD0..0x150].copy_from_slice(&fake_header);
+
+    // ==================================================
+    // 2. ¡EL OVERLAP SECRETO! (La pieza que faltaba)
+    // Sobreescribimos los primeros 80 bytes de la cabecera falsa
+    // con el sobrante del bloque Kirk desencriptado.
+    // ==================================================
+    inbuf[0xD0..0x120].copy_from_slice(&final_kirk_block[0x20..0x70]);
+
+    // 3. Cortamos el payload exacto para el AES
+    let payload = &mut inbuf[0xD0 .. 0xD0 + padded_size];
+
+    // 4. Desencriptamos (Volvemos a usar el `?` porque ahora sí confiamos)
+    kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
+        .map_err(|_| PspError::DecryptionFailed)?;
+
+    // 5. Acomodamos la memoria para tu Test
+    inbuf.copy_within(0xD0 .. 0xD0 + real_size, 0x150);
+
+    Ok(real_size)
+
+
+
 
 
 	// let mut fake_header = [0u8;0x80];
@@ -537,21 +575,24 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
 	// inbuf[0xD0..0x150].copy_from_slice(&fake_header);
 
 
-    // let payload = &mut inbuf[0xD0..];
+    // let payload = &mut inbuf[0xD0..0xD0 + padded_size];
 
-    // // Payload (KIRK_CMD1)
+	// let _ = kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload);
+	// inbuf.copy_within(0xD0 .. 0xD0 + real_size, 0x150);
+    // Ok(real_size)
+
+    // // // Payload (KIRK_CMD1)
     // kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
     // .map_err(|_| PspError::DecryptionFailed)?;
 
 	// inbuf.copy_within(0xD0 .. 0xD0 + real_size, 0x150);
 
-    // Ok(real_size)
 
 }
 
 
 pub fn decrypt_kirk_header(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8], key_id: i32) -> Result<(), KirkError>{
-    for i in (0..0x40) {
+    for i in 0..0x40 {
         outbuf[i] = inbuf[i] ^ xorbuf[i];
     }
 
@@ -625,16 +666,6 @@ pub fn decrypt_prx(inbuf: &mut [u8]) -> Result<usize, PspError>{
 	)
 }
 
-fn check_decryption_succeed(eboot_data: &[u8]) -> bool {
-	let psp_header_size = 0x150;
-	let magic_bytes = &eboot_data[psp_header_size .. psp_header_size + 4];
-	
-	let is_elf = magic_bytes == [0x7F, 0x45, 0x4C, 0x46]; // .ELF
-	let is_psp = magic_bytes == [0x7E, 0x50, 0x53, 0x50]; // ~PSP
-
-	is_elf || is_psp
-
-}
 
 use crate::tag_info::{KeyType, TAG_INFO, TAG_INFO2};
 #[cfg(test)]
@@ -655,8 +686,15 @@ use std::io::{Read, Write};
 
 		psp_decrypt_type0(&mut eboot_data)?;
 
+		let psp_header_size = 0x150;
+		let magic_bytes = &eboot_data[psp_header_size .. psp_header_size + 4];
+		
+		let is_elf = magic_bytes == [0x7F, 0x45, 0x4C, 0x46]; // .ELF
+		let is_psp = magic_bytes == [0x7E, 0x50, 0x53, 0x50]; // ~PSP
+
+
 		assert!(
-			check_decryption_succeed(&eboot_data),
+			is_elf || is_psp,
 			"El enrutador falló silenciosamente."
 		);
 
@@ -673,8 +711,12 @@ use std::io::{Read, Write};
 
 		psp_decrypt_type1(&mut eboot_data)?;
 
+		let magic_bytes = &eboot_data[0x80..0x80+4];
+		println!("MAGIC BYTES: {:?}", magic_bytes);
+		let is_elf = magic_bytes == [0x7F, 0x45, 0x4C, 0x46]; // .ELF
+
 		assert!(
-			check_decryption_succeed(&eboot_data),
+			is_elf,
 			"El enrutador falló silenciosamente."
 		);
 

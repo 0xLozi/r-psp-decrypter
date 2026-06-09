@@ -44,8 +44,12 @@ fn main() -> Result<(), PspError>{
     match decrypt_prx(&mut eboot_data) {
         Ok(decrypted_size) => {
             // If everything worked well, then we save the pure .ELF
-            let psp_header_size = 0x150;
-            let pure_elf = &eboot_data[psp_header_size..psp_header_size+decrypted_size];
+
+            let offset_elf = (0..eboot_data.len() - 4)
+                .find(|&i| eboot_data[i..i + 4] == [0x7F, 0x45, 0x4C, 0x46])
+                .expect("No se encontró la cabecera ELF");
+
+            let pure_elf = &eboot_data[offset_elf..];
 
             let mut out_file = File::create(&ruta_salida).map_err(|_| PspError::FileCreationFailed)?;
 
