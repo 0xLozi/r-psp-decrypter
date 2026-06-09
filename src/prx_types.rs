@@ -36,7 +36,7 @@ impl PrxType1 {
         Self { data }
     }
 
-    pub fn decrypt_header(&mut self, key_id: i32) -> Result<(), KirkError> {
+    pub fn decrypt(&mut self, key_id: i32) -> Result<(), KirkError> {
         // En C++ la firma era: kirk7(sha1+0xC, sha1+0xC, 0xA0, key);
         // Nuestro 'sha1' empieza en el offset 4.
         // 4 + 12 (0xC) = 16 (0x10).
@@ -82,12 +82,12 @@ impl PrxType1 {
         let mut hasher = Sha1::new();
 
         hasher.update(&xorbuf[0..0x14]);
+
         hasher.update(self.unused());
         hasher.update(self.kirk_block());
         hasher.update(self.prx_header());
 
         let hash_calculated = hasher.finalize();
-
         hash_calculated[..] == self.sha1()[..]
     }
 
@@ -435,7 +435,16 @@ pub fn psp_decrypt_type0(inbuf: &mut [u8]) -> Result<usize, PspError> {
     let mut xorbuf = [0u8; 0x90];
 
     // Now we gotta copy the key the safest way
-    match key_info.key { KeyType::U8(k) => { xorbuf.copy_from_slice(k); } KeyType::U32(k1) => { for (i, &word) in k1.iter().enumerate() { let start = i*4; xorbuf[start..start+4].copy_from_slice(&word.to_le_bytes()); } }
+    match key_info.key { 
+        KeyType::U8(k) => { 
+            xorbuf.copy_from_slice(k); 
+        } 
+        KeyType::U32(k1) => { 
+            for (i, &word) in k1.iter().enumerate() { 
+                let start = i*4; 
+                xorbuf[start..start+4].copy_from_slice(&word.to_le_bytes()); 
+            } 
+        }
     }
 
     let mut type0 = PrxType0::new(inbuf);
@@ -466,6 +475,79 @@ pub fn psp_decrypt_type0(inbuf: &mut [u8]) -> Result<usize, PspError> {
 
 }
 
+pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
+    let decrypt_size = u32::from_le_bytes(
+        inbuf[0xB0..0xB4]
+        .try_into().map_err(|_| PspError::SizeError)?
+    );
+    println!("Tamaño a desencriptar: {} bytes", decrypt_size);
+
+    let tag = u32::from_le_bytes(
+        inbuf[0xD0..0xD0+4]
+        .try_into().map_err(|_| PspError::PointerError)?
+    );
+
+    let key_info = get_tag_info(tag).ok_or(PspError::TagNotFound)?;
+    let key_id = key_info.code as i32;
+    
+    let mut xorbuf = [0u8; 0x90];
+
+    match key_info.key { 
+        KeyType::U8(k) => { 
+            xorbuf.copy_from_slice(k); 
+        } 
+        KeyType::U32(k1) => { 
+            for (i, &word) in k1.iter().enumerate() { 
+                let start = i*4; 
+                xorbuf[start..start+4].copy_from_slice(&word.to_le_bytes()); 
+            } 
+        }
+    }
+
+    let mut type1 = PrxType1::new(inbuf);
+	type1.decrypt(key_id).map_err(|_| PspError::DecryptionFailed)?;
+
+
+    if !type1.is_valid(&xorbuf) {
+		println!("La desencriptación exterior no es valida (SHA-1 ha fallado..)");
+        return Err(PspError::ValidationFailed);
+    } 
+
+	let mut final_kirk_block = [0u8; 0x90];
+
+	final_kirk_block.copy_from_slice(type1.kirk_block());
+
+	decrypt_kirk_header_type_0(&mut final_kirk_block, type1.kirk_block(), &xorbuf, key_id)
+	.map_err(|_| PspError::DecryptionFailed)?;
+
+	let kirk_cmd = KirkCmd1Header::new(&final_kirk_block);
+
+    if kirk_cmd.mode().map_err(|_| PspError::ValidationFailed)? != 1 {
+        return Err(PspError::InvalidMode)
+    }
+
+	Ok(92486)
+
+    // let size = kirk_cmd.data_size().map_err(|_| PspError::ValidationFailed)? as usize;
+	// let real_size = decrypt_size as usize;
+
+
+	// let mut fake_header = [0u8;0x80];
+	// fake_header.copy_from_slice(type1.prx_header());
+	// inbuf[0xD0..0x150].copy_from_slice(&fake_header);
+
+
+    // let payload = &mut inbuf[0xD0..];
+
+    // // Payload (KIRK_CMD1)
+    // kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
+    // .map_err(|_| PspError::DecryptionFailed)?;
+
+	// inbuf.copy_within(0xD0 .. 0xD0 + real_size, 0x150);
+
+    // Ok(real_size)
+
+}
 
 
 pub fn decrypt_kirk_header(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8], key_id: i32) -> Result<(), KirkError>{
@@ -538,19 +620,31 @@ pub fn decrypt_prx(inbuf: &mut [u8]) -> Result<usize, PspError>{
     println!("Tag detectado: 0x{:08X}", tag);
 
     psp_decrypt_type0(inbuf)
+	.or(
+		psp_decrypt_type1(inbuf)
+	)
 }
 
-use crate::keys_service;
-use crate::tag_info::{KeyType, TAG_INFO, TAG_INFO2};
+fn check_decryption_succeed(eboot_data: &[u8]) -> bool {
+	let psp_header_size = 0x150;
+	let magic_bytes = &eboot_data[psp_header_size .. psp_header_size + 4];
+	
+	let is_elf = magic_bytes == [0x7F, 0x45, 0x4C, 0x46]; // .ELF
+	let is_psp = magic_bytes == [0x7E, 0x50, 0x53, 0x50]; // ~PSP
 
+	is_elf || is_psp
+
+}
+
+use crate::tag_info::{KeyType, TAG_INFO, TAG_INFO2};
 #[cfg(test)]
 mod tests {
     use super::*; // Importamos PrxType1 y demas
     use std::fs::File;
-    use std::io::{Read, Write};
+use std::io::{Read, Write};
 
     #[test]
-   fn test_router_decryption_lumines_succeeds() -> Result<(), PspError> {
+   fn test_router_decryption_type0_succeeds() -> Result<(), PspError> {
         let ruta_eboot = "/home/snake/Downloads/lumine/lumines/lumines_game/PSP_GAME/SYSDIR/EBOOT.BIN";
         
         let mut file = File::open(ruta_eboot)
@@ -559,21 +653,32 @@ mod tests {
         let mut eboot_data = Vec::new();
         file.read_to_end(&mut eboot_data).unwrap();
 
-        decrypt_prx(&mut eboot_data)?;
+		psp_decrypt_type0(&mut eboot_data)?;
 
-        // Verificamos los Magic Bytes para asegurarnos de que la magia ocurrió
-        let psp_header_size = 0x150;
-        let magic_bytes = &eboot_data[psp_header_size .. psp_header_size + 4];
-        
-        let is_elf = magic_bytes == [0x7F, 0x45, 0x4C, 0x46]; // .ELF
-        let is_psp = magic_bytes == [0x7E, 0x50, 0x53, 0x50]; // ~PSP
-
-        assert!(
-            is_elf || is_psp, 
-            "El enrutador falló silenciosamente. Magic Bytes: {:?}", 
-            magic_bytes
-        );
+		assert!(
+			check_decryption_succeed(&eboot_data),
+			"El enrutador falló silenciosamente."
+		);
 
         Ok(())
    } 
+
+   #[test]
+   fn test_router_decryption_type1_succeeds() -> Result<(), PspError> {
+		let ruta_eboot = "/home/snake/Downloads/lego_batman_game/PSP_GAME/SYSDIR/EBOOT.BIN";
+		let mut file = File::open(ruta_eboot).expect("No se pudo abrir el archivo...");
+
+		let mut eboot_data = Vec::new();
+		file.read_to_end(&mut eboot_data).expect("No se pudo pasar los bytes del archivo al vector...");
+
+		psp_decrypt_type1(&mut eboot_data)?;
+
+		assert!(
+			check_decryption_succeed(&eboot_data),
+			"El enrutador falló silenciosamente."
+		);
+
+		Ok(())
+   }
 }
+

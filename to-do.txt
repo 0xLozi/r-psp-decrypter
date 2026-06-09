@@ -1,0 +1,2 @@
+Arreglar decrypt header de tipo1 (pide 1 argumento en vez de 2)
+Compleatr decrypt type 1
