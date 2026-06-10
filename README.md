@@ -1,35 +1,56 @@
-# PSP PRX Decrypter - Rust Port (Development Fork)
+# PSP PRX Decrypter - Rust Port
 
-**Este es mi fork de desarrollo** del proyecto de desencriptado de PRX/EBOOT.BIN para PSP.
+**A secure and modern Rust port** of the classic PSP (PlayStation Portable) PRX/EBOOT.BIN decrypter based on the KIRK engine.
 
-Versión original / referencia: [https://github.com/0xLozi/R-PSP]
+> Development fork / Active port
 
-Este repositorio contiene mi implementación en Rust (en progreso).
+![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-blue.svg)
+
 ## Features
-- Detección automática de tipo de tag/encriptación
-- Soporte para AES + KIRK engine decryption
-- Validación de integridad con SHA1
-- Parsing seguro de headers binarios
-- Enfoque en memory safety (sin unsafe innecesario)
 
-## Estructura del proyecto
-- `src/headers.rs` → Parsing de headers
-- `src/prx_decrypt.rs` → Lógica principal de desencriptado
-- `src/kirk_lib/` → Implementación del engine KIRK
-- `src/keys.rs` → Manejo de claves
+- **Automatic encryption type detection** (tag parsing)
+- Full support for **AES decryption** + KIRK engine
+- **SHA1 integrity validation**
+- Safe binary header parsing with zero-copy focus
+- Strong emphasis on **memory safety** and modern Rust practices (minimal `unsafe`)
+- Clean architecture with good separation of concerns
 
-## Cómo compilar y usar
+## Project Structure
 
 ```bash
-cargo build --release
-cargo run <ruta_al_archivo_prx_o_eboot>
+src/
+├── main.rs                 # CLI entry point
+├── headers.rs              # Binary header parsing
+├── prx_decrypt.rs          # Main decryption logic
+├── kirk_lib/               # KIRK engine implementation
+├── keys.rs                 # Key management
+└── utils.rs                # Helpers
 ```
-## Ejecutar Test de Unidad
+
+## Quick Start
+### Build & Run
+```bash
+# Build optimized version
+cargo build --release
+
+# Run
+./target/release/psp-prx-decrypter <path_to_prx_or_eboot_file>
+```
+
+## Run Tests
 ```bash
 cargo test
 ```
 
-## Roadmap
-- [ ] Soporte completo para todos los tipos de tags
-- [ ] Tests con archivos reales
-- [ ] CLI más completa con argumentos
+### Motivation
+This project started as a learning exercise in reverse engineering and low-level programming. The goal was to take an existing C++ tool and rebuild it in modern, safe Rust while maintaining (or improving) performance and adding better error handling.
+
+
+
+### Roadmap
+ - Complete support for all tag types
+ - More comprehensive unit and integration tests with real files
+ - Richer CLI (progress bar, batch processing, output options)
+ - Library mode (usable as a crate)
+ - Performance benchmarks vs original C++ version
