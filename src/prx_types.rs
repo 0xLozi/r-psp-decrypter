@@ -66,6 +66,8 @@ impl PrxType1 {
         &self.data[0x40..0xD0]
     }
 
+    // prxHeader (128 bytes / 0x80)
+    // Remember, we use this position of the array because here we put everythign into a giant array. Thus we have to copy there instead of 0x00 to 0x80
     /// Devuelve la cabecera final del PRX
     pub fn prx_header(&self) -> &[u8] {
         &self.data[0xD0..0x150]
@@ -517,42 +519,45 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
 	type1.decrypt(key_id)
     .map_err(|_| PspError::DecryptionFailed)?;
 
-
     // After decryption, we validate. If we do this step before the external decryption, it'll fail
     if !type1.is_valid(&xorbuf) {
         println!("The external decryption isn't valid (SHA-1 failed)");
         return Err(PspError::ValidationFailed);
     } 
 
+    // We need to copy the slice in order to decrypt the header type 0
+    let mut final_kirk_block = [0u8;0x90];
 
-
-	let mut final_kirk_block = [0u8; 0x90];
-
+    // We copy the slice
 	final_kirk_block.copy_from_slice(type1.kirk_block());
 
+    // And we decrypt it
 	decrypt_kirk_header_type_0(&mut final_kirk_block, type1.kirk_block(), &xorbuf, key_id)
 	.map_err(|_| PspError::DecryptionFailed)?;
 
+
+    // Then we create the KIRKCMDHEADER
 	let kirk_cmd = KirkCmd1Header::new(&final_kirk_block);
 
     if kirk_cmd.mode().map_err(|_| PspError::ValidationFailed)? != 1 {
         return Err(PspError::InvalidMode)
     }
 
-
 	// Something is weird... AES is a cipher by blocks, but &mut inbuf[0xD0..]
 	// decrypt_size = 4.109.852 bytes..... 0xD0 .. 4.109.852 is 4.109.984
 	// Difference = 132 bytes
 	// could it be excsda signature?
 	let real_size = decrypt_size as usize;
+    let padded_size: usize;
 
-	let padded_size = if real_size % 16 == 0 {
-		real_size
-	} else {
-		real_size + (16 - (real_size % 16))
-	};
+    if real_size % 16 == 0 {
+        padded_size = real_size;
+    } else {
+        padded_size = real_size + (16 - (real_size % 16 ));
+    }
 
-	// 1. Pegamos la cabecera falsa en 0xD0..0x150
+
+    // Next we copy the fake header that was at the first offset and we copy that into 0xD0, in order to paste the remaining steps for the decryption
     let mut fake_header = [0u8; 0x80];
     fake_header.copy_from_slice(type1.prx_header());
     inbuf[0xD0..0x150].copy_from_slice(&fake_header);
@@ -569,29 +574,6 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
     inbuf.copy_within(0xD0 .. 0xD0 + real_size, 0x150);
 
     Ok(real_size)
-
-
-
-
-
-	// let mut fake_header = [0u8;0x80];
-	// fake_header.copy_from_slice(type1.prx_header());
-	// inbuf[0xD0..0x150].copy_from_slice(&fake_header);
-
-
-    // let payload = &mut inbuf[0xD0..0xD0 + padded_size];
-
-	// let _ = kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload);
-	// inbuf.copy_within(0xD0 .. 0xD0 + real_size, 0x150);
-    // Ok(real_size)
-
-    // // // Payload (KIRK_CMD1)
-    // kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
-    // .map_err(|_| PspError::DecryptionFailed)?;
-
-	// inbuf.copy_within(0xD0 .. 0xD0 + real_size, 0x150);
-
-
 }
 
 
@@ -610,13 +592,13 @@ pub fn decrypt_kirk_header(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8], key_i
 }
 
 pub fn decrypt_kirk_header_type_0(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8], key_id: i32) -> Result<(), KirkError> {
-    for i in (0..0x70) {
+    for i in 0..0x70 {
         outbuf[i] = inbuf[i] ^ xorbuf[i+0x14];
     }
 
-    kirk7(outbuf, key_id);
+    kirk7(outbuf, key_id)?;
 
-    for i in (0..0x70) { 
+    for i in 0..0x70 { 
         outbuf[i] ^= xorbuf[0x20+i];
     }
 
