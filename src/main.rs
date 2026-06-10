@@ -42,7 +42,7 @@ fn main() -> Result<(), PspError>{
     }
 
     match decrypt_prx(&mut eboot_data) {
-        Ok(decrypted_size) => {
+        Ok(_) => {
             // If everything worked well, then we save the pure .ELF
 
             let offset_elf = (0..eboot_data.len() - 4)

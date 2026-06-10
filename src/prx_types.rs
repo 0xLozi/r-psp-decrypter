@@ -480,18 +480,24 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
         inbuf[0xB0..0xB4]
         .try_into().map_err(|_| PspError::SizeError)?
     );
-    println!("Tamaño a desencriptar: {} bytes", decrypt_size);
+    println!("Size to decrypt: {} bytes", decrypt_size);
 
     let tag = u32::from_le_bytes(
         inbuf[0xD0..0xD0+4]
         .try_into().map_err(|_| PspError::PointerError)?
     );
 
+
+
+    // Now we obtain the tag_info from keys.rs
     let key_info = get_tag_info(tag).ok_or(PspError::TagNotFound)?;
     let key_id = key_info.code as i32;
     
+    // We initialize each data with 0 
     let mut xorbuf = [0u8; 0x90];
 
+
+    // Depending on the type-key, we need no make some additional steps in order to get the required key
     match key_info.key { 
         KeyType::U8(k) => { 
             xorbuf.copy_from_slice(k); 
@@ -504,17 +510,21 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
         }
     }
 
+    // Now we initialize the type1 struct
     let mut type1 = PrxType1::new(inbuf);
-	type1.decrypt(key_id).map_err(|_| PspError::DecryptionFailed)?;
+
+    // And then decrypt
+	type1.decrypt(key_id)
+    .map_err(|_| PspError::DecryptionFailed)?;
 
 
+    // After decryption, we validate. If we do this step before the external decryption, it'll fail
     if !type1.is_valid(&xorbuf) {
-		println!("La desencriptación exterior no es valida (SHA-1 ha fallado..)");
+        println!("The external decryption isn't valid (SHA-1 failed)");
         return Err(PspError::ValidationFailed);
     } 
 
 
-	//ACÁ ES DONDE COMIENZA EL ERROR.... Bueno ahora arreglado...
 
 	let mut final_kirk_block = [0u8; 0x90];
 
@@ -666,7 +676,7 @@ use crate::tag_info::{KeyType, TAG_INFO, TAG_INFO2};
 mod tests {
     use super::*; // Importamos PrxType1 y demas
     use std::fs::File;
-use std::io::{Read, Write};
+    use std::io::{Read, Write};
 
     #[test]
    fn test_router_decryption_type0_succeeds() -> Result<(), PspError> {
@@ -683,14 +693,20 @@ use std::io::{Read, Write};
 		let psp_header_size = 0x150;
 		let magic_bytes = &eboot_data[psp_header_size .. psp_header_size + 4];
 		
-		let is_elf = magic_bytes == [0x7F, 0x45, 0x4C, 0x46]; // .ELF
+		let elf = [0x7F, 0x45, 0x4C, 0x46]; // .ELF
 		let is_psp = magic_bytes == [0x7E, 0x50, 0x53, 0x50]; // ~PSP
 
 
-		assert!(
-			is_elf || is_psp,
-			"El enrutador falló silenciosamente."
-		);
+        // This is for searching inside the ".ELF" extension. This is because we don't know at compile time where it would be
+        let offset_elf= (0..eboot_data.len() - 4)
+        .find(|&i| eboot_data[i..i+4] == elf);
+
+
+        assert!(
+            offset_elf.is_some(),
+            "The router failed"
+        );
+
 
         Ok(())
    } 
@@ -705,14 +721,17 @@ use std::io::{Read, Write};
 
 		psp_decrypt_type1(&mut eboot_data)?;
 
-		let magic_bytes = &eboot_data[0x80..0x80+4];
-		println!("MAGIC BYTES: {:?}", magic_bytes);
-		let is_elf = magic_bytes == [0x7F, 0x45, 0x4C, 0x46]; // .ELF
+		let elf = [0x7F, 0x45, 0x4C, 0x46]; // .ELF
 
-		assert!(
-			is_elf,
-			"El enrutador falló silenciosamente."
-		);
+        // This is for searching inside the ".ELF" extension. This is because we don't know at compile time where it would be
+        let offset_elf= (0..eboot_data.len() - 4)
+        .find(|&i| eboot_data[i..i+4] == elf);
+
+
+        assert!(
+            offset_elf.is_some(),
+            "The router failed"
+        );
 
 		Ok(())
    }
