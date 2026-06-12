@@ -95,85 +95,60 @@ impl PrxType1 {
 
 }
 
-pub struct PrxType2 {
-    pub data: [u8; 0x150],
+struct PrxType2 {
+    data: [u8; 0x150],
 }
 
 impl PrxType2 {
-    pub fn new(prx: &[u8]) -> Self {
+    const TAG: std::ops::Range<usize>       = 0x00..0x04;
+    const EMPTY: std::ops::Range<usize>     = 0x04..0x5C;
+    const ID: std::ops::Range<usize>        = 0x5C..0x6C;
+    const SHA1: std::ops::Range<usize>      = 0x6C..0x80;
+    const KIRK_HDR: std::ops::Range<usize>  = 0x80..0xC0;
+    const KIRK_META: std::ops::Range<usize> = 0xC0..0xD0;
+    const PRX_HDR: std::ops::Range<usize>   = 0xD0..0x150;
+
+    fn new(prx: &[u8]) -> Self {
+        // Definimos el mapa de memoria estático para no tener que usar números mágicos...
         let mut data = [0u8; 0x150];
-        // tag: Offset 0xD0 (C++: prx+0xD0)
-        data[0..0x04].copy_from_slice(&prx[0xD0..0xD4]);
-        
-        // id: Offset 0x140 (C++: prx+0x140)
-        data[0x5C..0x6C].copy_from_slice(&prx[0x140..0x150]);
-        
-        // sha1: Offset 0x12C (C++: prx+0x12C)
-        data[0x6C..0x80].copy_from_slice(&prx[0x12C..0x140]);
-        
-        // kirkHeader: Este venía partido al medio en el C++ original
-        // Primera parte (tamaño 0x30 / 48 bytes)
+
+        data[Self::TAG].copy_from_slice(&prx[0xD0..0xD4]);
+        data[Self::ID].copy_from_slice(&prx[0x140..0x150]);
+        data[Self::SHA1].copy_from_slice(&prx[0x12C..0x140]);
+
+        // This is the kirk header that was split into two...
         data[0x80..0xB0].copy_from_slice(&prx[0x80..0xB0]);
-        // Segunda parte (tamaño 0x10 / 16 bytes)
         data[0xB0..0xC0].copy_from_slice(&prx[0xC0..0xD0]);
-        
-        // kirkMetadata: Offset 0xB0 (C++: prx+0xB0)
-        data[0xC0..0xD0].copy_from_slice(&prx[0xB0..0xC0]);
-        
-        // prxHeader: Offset 0 (C++: prx)
-        data[0xD0..0x150].copy_from_slice(&prx[0..0x80]);
+
+        data[Self::KIRK_META].copy_from_slice(&prx[0xB0..0xC0]);
+        data[Self::PRX_HDR].copy_from_slice(&prx[0..0x80]);
 
         Self { data }
     }
 
-    pub fn decrypt_header(&mut self, key_id: i32) -> Result<(), KirkError> {
-        // En C++ la firma era: kirk7(id, id, 0x60, key);
-        // Sabemos por nuestra tabla que 'id' empieza en el byte 0x5C.
-        // Si queremos desencriptar 96 bytes (0x60): 0x5C + 0x60 = 0xBC.
-        
-        kirk7(&mut self.data[0x5C..0xBC], key_id)?;
-        
+    fn decrypt_id_block(&mut self, key_id: i32) -> Result<(), KirkError> {
+        let start = Self::ID.start;
+        let decrypt_block = &mut self.data[start .. start + 0x60];
+
+        kirk7(decrypt_block, key_id)?;
+
         Ok(())
     }
 
-    pub fn tag(&self) -> &[u8] {
-        &self.data[0..0x04]
-    }
+    fn tag(&self) -> &[u8] { &self.data[Self::TAG] }
+    fn id(&self) -> &[u8] { &self.data[Self::ID] }
+    fn sha1(&self) -> &[u8] { &self.data[Self::SHA1] }
+    fn kirk_header(&self) -> &[u8] { &self.data[Self::KIRK_HDR] }
+    fn prx_header(&self) -> &[u8] { &self.data[Self::PRX_HDR] }
+    fn empty(&self) -> &[u8] { &self.data[Self::EMPTY] }
+    fn kirk_metadata(&self) -> &[u8] { &self.data[Self::KIRK_META] }
 
-    pub fn id(&self) -> &[u8] {
-        &self.data[0x5C..0x6C]
-    }
-
-    pub fn sha1(&self) -> &[u8] {
-        &self.data[0x6C..0x80]
-    }
-
-    pub fn kirk_header(&self) -> &[u8] {
-        &self.data[0x80..0xC0]
-    }
-
-    pub fn prx_header(&self) -> &[u8] {
-        &self.data[0xD0..0x150]
-    }
 }
 
 
 pub struct PrxType0 {
     data: [u8;0x150],
 }
-    // Code from C
-    // memcpy(tag, prx+0xD0, sizeof(tag));
-    // memcpy(sha1, prx+0xD4, sizeof(sha1));
-    // memcpy(unused, prx+0xE8, sizeof(unused));
-    // memcpy(kirkBlock, prx+0x110, 0x40); // key data
-    // memcpy(kirkBlock+0x40, prx+0x80, sizeof(kirkBlock)-0x40);
-    // memcpy(prxHeader, prx, sizeof(prxHeader));
-	// u8 tag[4];
-	// u8 sha1[0x14];
-	// u8 unused[0x28];
-	// u8 kirkBlock[0x90];
-	// u8 prxHeader[0x80];
-
 
 impl PrxType0 {
     pub fn new(prx: &[u8]) -> Self {
@@ -489,8 +464,6 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
         .try_into().map_err(|_| PspError::PointerError)?
     );
 
-
-
     // Now we obtain the tag_info from keys.rs
     let key_info = get_tag_info(tag).ok_or(PspError::TagNotFound)?;
     let key_id = key_info.code as i32;
@@ -556,7 +529,6 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
         padded_size = real_size + (16 - (real_size % 16 ));
     }
 
-
     // Next we copy the fake header that was at the first offset and we copy that into 0xD0, in order to paste the remaining steps for the decryption
     let mut fake_header = [0u8; 0x80];
     fake_header.copy_from_slice(type1.prx_header());
@@ -574,6 +546,24 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
     inbuf.copy_within(0xD0 .. 0xD0 + real_size, 0x150);
 
     Ok(real_size)
+}
+
+
+pub fn psp_decrypt_type2(inbuf: &mut [u8]) -> Result<usize, PspError> {
+    // First we have to search into get_tag_2
+    // Tag offset is the same as type 1
+    let tag_offset = u32::from_le_bytes(
+        inbuf[0xD0..0xD4]
+        .try_into()
+        .map_err(|_| PspError::DecryptionFailed)?
+    );
+    // Then we search the tag we receive inside TAG_INFO2
+    let tag = get_tag_info_2(tag_offset)
+    .ok_or(PspError::TagNotFound)?;
+
+
+
+    Ok(29185)
 }
 
 
