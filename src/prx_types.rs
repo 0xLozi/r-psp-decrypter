@@ -1,3 +1,5 @@
+use std::ptr::hash;
+
 use crate::error_handling::errors::{KirkError, PspError};
 use crate::kirk_lib::kirk_engine::{kirk7, kirk_cmd1_decrypt};
 use sha1::{Sha1, Digest};
@@ -126,13 +128,28 @@ impl PrxType2 {
         Self { data }
     }
 
-    fn decrypt_id_block(&mut self, key_id: i32) -> Result<(), KirkError> {
+    fn decrypt(&mut self, key_id: i32) -> Result<(), KirkError> {
         let start = Self::ID.start;
         let decrypt_block = &mut self.data[start .. start + 0x60];
 
         kirk7(decrypt_block, key_id)?;
 
         Ok(())
+    }
+
+    // TO-DO: Implementar esto
+    pub fn is_valid(&self, xorbuf: &[u8]) -> bool {
+        let mut hasher = Sha1::new();
+        hasher.update(self.tag());
+        hasher.update(&xorbuf[0..0x10]);
+        hasher.update(self.empty());
+        hasher.update(self.id());
+        hasher.update(self.kirk_header());
+        hasher.update(self.kirk_metadata());
+        hasher.update(self.prx_header());
+        let hash_calculated = hasher.finalize();
+
+        hash_calculated[..] == self.sha1()[..]
     }
 
     fn tag(&self) -> &[u8] { &self.data[Self::TAG] }
@@ -561,7 +578,27 @@ pub fn psp_decrypt_type2(inbuf: &mut [u8]) -> Result<usize, PspError> {
     let tag = get_tag_info_2(tag_offset)
     .ok_or(PspError::TagNotFound)?;
 
+    // The same procedure as the other types: expand seed
+    let key_id = tag.code as i32;
+    let key_info = tag.key;
 
+    let mut xorbuf = expanded_seed(key_info, key_id, None)
+    .map_err(|_| PspError::DecryptionFailed)?;
+
+    let mut type2 = PrxType2::new(inbuf);
+    type2.decrypt(key_id).map_err(|_| PspError::DecryptionFailed)?;
+
+
+    let valid = type2.is_valid(&xorbuf);
+
+    if valid {
+        println!("La desencriptación es válida");
+    } else {
+        return Err(PspError::DecryptionFailed)?;
+    } 
+
+
+    println!("{:?}", xorbuf);
 
     Ok(29185)
 }
@@ -706,6 +743,22 @@ mod tests {
         );
 
 		Ok(())
+   }
+
+   #[test]
+   fn test_decryption_type2_succeeds() -> Result<(), PspError> {
+        let ruta_eboot = "/home/snake/Downloads/games_for_decryption/god_of_war/PSP_GAME/SYSDIR/EBOOT.BIN";
+
+		let mut file = File::open(ruta_eboot).expect("No se pudo abrir el archivo...");
+
+		let mut eboot_data = Vec::new();
+		file.read_to_end(&mut eboot_data).expect("No se pudo pasar los bytes del archivo al vector...");
+
+        psp_decrypt_type2(&mut eboot_data)?;
+
+        println!("funciono?");
+
+        Ok(())
    }
 }
 

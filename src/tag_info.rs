@@ -20,3 +20,4 @@ pub struct TAG_INFO2 {
     pub type_code: Option<u8>,
     pub seed: Option<&'static [u8; 16]>,
 }
+
