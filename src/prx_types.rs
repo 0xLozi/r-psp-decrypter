@@ -588,7 +588,7 @@ pub fn psp_decrypt_type2(inbuf: &mut [u8]) -> Result<usize, PspError> {
     let mut type2 = PrxType2::new(inbuf);
     type2.decrypt(key_id).map_err(|_| PspError::DecryptionFailed)?;
 
-
+    // SOY UN MOGOLICO: ESTO NO LO HABIA IMPLEMENTADO Y ESTUVE COMO AUTISTA VIENDO SI ESTABA BIENE EL CÓDIGO; TENIA QUE RETORNABA "FALSE" NADA MAS LA FUNCIÓN....
     let valid = type2.is_valid(&xorbuf);
 
     if valid {
@@ -597,10 +597,52 @@ pub fn psp_decrypt_type2(inbuf: &mut [u8]) -> Result<usize, PspError> {
         return Err(PspError::DecryptionFailed)?;
     } 
 
+    let mut kirk_header= [0u8;0x40]; // Like, the size of kirk_header
+    kirk_header.copy_from_slice(type2.kirk_header());
 
-    println!("{:?}", xorbuf);
+    // Idk why they do this,sony is kinda weird but I trust the bytes!!!
+    let xorbuff_after_10 = &xorbuf[0x10..];
 
-    Ok(29185)
+    let decrypt_header = decrypt_kirk_header(&mut kirk_header, type2.kirk_header(), &xorbuff_after_10, key_id);
+
+
+    let mut final_kirk_header = [0u8; 0x90];
+    final_kirk_header[0x00..0x40].copy_from_slice(&decrypted_kirk_block);
+    final_kirk_header[0x60..0x70].copy_from_slice(type2.kirk_metadata());
+
+    let mut kirk_cmd = KirkCmd1Header::new(&final_kirk_header);
+
+    if kirk_cmd.mode().map_err(|_| PspError::ValidationFailed)? != 1 {
+        // Como el C++ lo forzaba a 1, si aca no es 1, algo salio mal en el rompecabezas....
+        return Err(PspError::InvalidMode);
+    }
+
+    // REVISAR ESTO, TODAVIA NO SE SI ESTÁ BIEN
+
+    let decrypt_size = u32::from_le_bytes(
+        inbuf[0xB0..0xB0+4].try_into().map_err(|_| PspError::DecryptionFailed)?
+    );
+    let real_size = decrypt_size as usize;
+
+    // Por si las moscas a 16 bytes para el motor AES
+    let padded_size = if real_size % 16 == 0 {
+        real_size
+    } else {
+        real_size + (16 - (real_size % 16))
+    };
+
+    let mut fake_header = [0u8;0x80];
+    fake_header.copy_from_slice(type2.prx_header());
+    inbuf[0xD0..0x150].copy_from_slice(&fake_header);
+
+    inbuf[0xD0..0x120].copy_from_slice(&final_kirk_header[0x20..0x70]);
+    let payload = &mut inbuf[0xD0 .. 0xD0 + padded_size];
+
+    kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
+        .map_err(|_| PspError::DecryptionFailed)?;
+    inbuf.copy_within(0xD0 .. 0xD0 + real_size, 0x150);
+
+    Ok(real_size)   
 }
 
 
