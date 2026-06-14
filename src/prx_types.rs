@@ -592,38 +592,48 @@ pub fn psp_decrypt_type2(inbuf: &mut [u8]) -> Result<usize, PspError> {
     let valid = type2.is_valid(&xorbuf);
 
     if valid {
-        println!("La desencriptación es válida");
+        println!("The decryption is valid");
     } else {
         return Err(PspError::DecryptionFailed)?;
     } 
 
     let mut kirk_header= [0u8;0x40]; // Like, the size of kirk_header
-    kirk_header.copy_from_slice(type2.kirk_header());
 
     // Idk why they do this,sony is kinda weird but I trust the bytes!!!
     let xorbuff_after_10 = &xorbuf[0x10..];
 
-    let decrypt_header = decrypt_kirk_header(&mut kirk_header, type2.kirk_header(), &xorbuff_after_10, key_id);
-
+    decrypt_kirk_header(&mut kirk_header, type2.kirk_header(), xorbuff_after_10, key_id).map_err(|_| PspError::DecryptionFailed)?;
 
     let mut final_kirk_header = [0u8; 0x90];
-    final_kirk_header[0x00..0x40].copy_from_slice(&decrypted_kirk_block);
+    final_kirk_header[0x00..0x40].copy_from_slice(&kirk_header);
     final_kirk_header[0x60..0x70].copy_from_slice(type2.kirk_metadata());
+
+    // Caso escencial por parte de Sony (Type 2): Para ofuscar el archivo, eliminaron el byte del modo.
+    // Forzamos 'mode = 1' en el offset 0x70 porque nuestra estructura 
+    // KirkCmd1Header es estricta y necesita este interruptor explícito 
+    // para saber que debe encender el motor de desencriptado AES-128-CBC.
+    final_kirk_header[0x70] = 1;
 
     let mut kirk_cmd = KirkCmd1Header::new(&final_kirk_header);
 
-    if kirk_cmd.mode().map_err(|_| PspError::ValidationFailed)? != 1 {
-        // Como el C++ lo forzaba a 1, si aca no es 1, algo salio mal en el rompecabezas....
-        return Err(PspError::InvalidMode);
-    }
-
-    // REVISAR ESTO, TODAVIA NO SE SI ESTÁ BIEN
+    // I already did this at line 615. Thus I don't have to validate what i already this before...
+    // if kirk_cmd.mode().map_err(|_| PspError::ValidationFailed)? != 1 {
+    //     // Como el C++ lo forzaba a 1, si aca no es 1, algo salio mal en el rompecabezas....
+    //     return Err(PspError::InvalidMode);
+    // }
 
     let decrypt_size = u32::from_le_bytes(
         inbuf[0xB0..0xB0+4].try_into().map_err(|_| PspError::DecryptionFailed)?
     );
     let real_size = decrypt_size as usize;
 
+    // El motor AES procesa datos UNICAMENTE en bloques exactos de 16 bytes.
+    // Sony no uso un padding estandar (como PKCS#7) que se pueda auto-recortar, 
+    // sino que rellenó el final del archivo original con basura aleatoria.
+    // Acá calculamos el múltiplo de 16 más cercano hacia arriba. Si le pasamos
+    // un bloque incompleto a nuestra librería (que usa NoPadding), explota. 
+    // Le pasamos el tamaño rellenado para que desencripte todo sin chistar, 
+    // y más abajo ignoramos la basura usando el 'real_size'.
     // Por si las moscas a 16 bytes para el motor AES
     let padded_size = if real_size % 16 == 0 {
         real_size
@@ -631,13 +641,15 @@ pub fn psp_decrypt_type2(inbuf: &mut [u8]) -> Result<usize, PspError> {
         real_size + (16 - (real_size % 16))
     };
 
-    let mut fake_header = [0u8;0x80];
-    fake_header.copy_from_slice(type2.prx_header());
-    inbuf[0xD0..0x150].copy_from_slice(&fake_header);
+    inbuf[0xD0..0x150].copy_from_slice(type2.prx_header());
 
+    // Despues tenemos que pisar los primeros 80 bytes de la parte desencriptada
     inbuf[0xD0..0x120].copy_from_slice(&final_kirk_header[0x20..0x70]);
+
+    // Creación del payload
     let payload = &mut inbuf[0xD0 .. 0xD0 + padded_size];
 
+    // Momento de la verdad...
     kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
         .map_err(|_| PspError::DecryptionFailed)?;
     inbuf.copy_within(0xD0 .. 0xD0 + real_size, 0x150);
@@ -798,7 +810,17 @@ mod tests {
 
         psp_decrypt_type2(&mut eboot_data)?;
 
-        println!("funciono?");
+		let elf = [0x7F, 0x45, 0x4C, 0x46]; // .ELF
+
+        // This is for searching inside the ".ELF" extension. This is because we don't know at compile time where it would be
+        let offset_elf= (0..eboot_data.len() - 4)
+        .find(|&i| eboot_data[i..i+4] == elf);
+
+
+        assert!(
+            offset_elf.is_some(),
+            "The router failed"
+        );
 
         Ok(())
    }
