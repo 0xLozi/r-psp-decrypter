@@ -1,4 +1,5 @@
 use std::ptr::hash;
+use std::result;
 
 use crate::error_handling::errors::{KirkError, PspError};
 use crate::kirk_lib::kirk_engine::{kirk7, kirk_cmd1_decrypt};
@@ -657,6 +658,32 @@ pub fn psp_decrypt_type2(inbuf: &mut [u8]) -> Result<usize, PspError> {
     Ok(real_size)   
 }
 
+pub fn psp_decrypt_type5(inbuf: &mut [u8]) -> Result<usize, PspError> {
+    let tag_offset = u32::from_le_bytes(
+        inbuf[0xD0..0xD4]
+        .try_into()
+        .map_err(|_| PspError::DecryptionFailed)?
+    );
+
+    let tag = get_tag_info_2(tag_offset)
+    .ok_or(PspError::DecryptionFailed)?;
+    
+    // pub key: &'static [u8; 16],
+    let xorbuff = expanded_seed(
+        tag.key, 
+        tag.code as i32,
+        tag.seed,
+    );
+
+
+    let type5 = PrxType5::new(&inbuf);
+    type5.decrypt_header(tag.code as i32, tag.seed, tag.seed)
+    .map_err(|_| PspError::DecryptionFailed)?;
+
+
+    Ok(4892086)
+}
+
 
 pub fn decrypt_kirk_header(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8], key_id: i32) -> Result<(), KirkError>{
     for i in 0..0x40 {
@@ -726,11 +753,10 @@ pub fn decrypt_prx(inbuf: &mut [u8]) -> Result<usize, PspError>{
     );
 
     println!("Tag detectado: 0x{:08X}", tag);
-
+    // Usamos or_else para que si uno funciona, frene y no ejecute el resto.
     psp_decrypt_type0(inbuf)
-	.or(
-		psp_decrypt_type1(inbuf)
-	)
+        .or_else(|_| psp_decrypt_type1(inbuf))
+        .or_else(|_| psp_decrypt_type2(inbuf))
 }
 
 
