@@ -37,6 +37,9 @@ pub enum PspError {
 
     #[error("No se pudo crear el archivo")]
     FileCreationFailed,
+
+    #[error("You need a seed in order to decrypt type 5")]
+    MissingSeed
 }
 
 

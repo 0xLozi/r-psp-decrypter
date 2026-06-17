@@ -270,28 +270,37 @@ impl PrxType5 {
         Self { data }
     }
 
-    pub fn tag(&self) -> &[u8] {
+    fn tag(&self) -> &[u8] {
         &self.data[0..0x04]
     }
 
-    pub fn id(&self) -> &[u8] {
+    // data[0xC0..0xD0].copy_from_slice(&prx[0xB0..0xC0]);
+    fn kirk_metadata(&self) -> &[u8] {
+        &self.data[0xC0..0xD0]
+    }
+
+
+    fn id(&self) -> &[u8] {
         &self.data[0x5C..0x6C]
     }
 
-    pub fn sha1(&self) -> &[u8] {
+    fn sha1(&self) -> &[u8] {
         &self.data[0x6C..0x80]
     }
 
-    pub fn kirk_header(&self) -> &[u8] {
+    fn kirk_header(&self) -> &[u8] {
         &self.data[0x80..0xC0]
     }
 
-    pub fn prx_header(&self) -> &[u8] {
+    fn prx_header(&self) -> &[u8] {
         &self.data[0xD0..0x150]
     }   
 
+    fn empty(&self) -> &[u8] {
+        &self.data[0x04..0x5C]
+    }
 
-    pub fn decrypt_header(&mut self, key_id: i32, xor1: Option<&[u8]>, xor2: Option<&[u8]>) -> Result<(), KirkError> {
+    fn decrypt_header(&mut self, key_id: i32, xor1: Option<&[u8]>, xor2: Option<&[u8]>) -> Result<(), KirkError> {
         let mut temp_data: [u8;0x50] = [0u8;0x50];
         temp_data[0..0x40].copy_from_slice(self.kirk_header());
         temp_data[0x40..0x40+0x10].copy_from_slice(&self.sha1()[0..0x10]);
@@ -332,6 +341,22 @@ impl PrxType5 {
         Ok(())
     }
 
+
+    fn is_valid(&self, xorbuf_before_0x10: &[u8;0x10]) -> bool {
+        use sha1::{Sha1, Digest};
+        let mut hasher = Sha1::new();
+
+        hasher.update(self.tag());
+        hasher.update(xorbuf_before_0x10);
+        hasher.update(self.empty());
+        hasher.update(self.id());
+        hasher.update(self.kirk_header());
+        hasher.update(self.kirk_metadata());
+        hasher.update(self.prx_header());
+
+        let hash_calculated = hasher.finalize();
+        hash_calculated[..] == self.sha1()[..]
+    }
 }
 
 struct PrxType6 {
@@ -658,32 +683,81 @@ pub fn psp_decrypt_type2(inbuf: &mut [u8]) -> Result<usize, PspError> {
     Ok(real_size)   
 }
 
-pub fn psp_decrypt_type5(inbuf: &mut [u8]) -> Result<usize, PspError> {
+
+pub fn psp_decrypt_type5(inbuf: &mut [u8], external_seed: &[u8;16]) -> Result<usize, PspError> {
     let tag_offset = u32::from_le_bytes(
         inbuf[0xD0..0xD4]
         .try_into()
         .map_err(|_| PspError::DecryptionFailed)?
     );
 
-    let tag = get_tag_info_2(tag_offset)
-    .ok_or(PspError::DecryptionFailed)?;
-    
-    // pub key: &'static [u8; 16],
-    let xorbuff = expanded_seed(
-        tag.key, 
-        tag.code as i32,
-        tag.seed,
+    let decrypt_size = u32::from_le_bytes(
+        inbuf[0xB0..0xB4]
+        .try_into().map_err(|_| PspError::SizeError)?
     );
 
+    let tag = get_tag_info_2(tag_offset)
+        .ok_or(PspError::TagNotFound)?;
+    
+    // Acá usamos la semilla EXTERNA en lugar de tag.seed
+    let mut xorbuff = expanded_seed(
+        tag.key, 
+        tag.code as i32,
+        Some(external_seed), // Le inyectamos la llave que robamos del PSAR
+    ).map_err(|_| PspError::DecryptionFailed)?;
 
-    let type5 = PrxType5::new(&inbuf);
-    type5.decrypt_header(tag.code as i32, tag.seed, tag.seed)
-    .map_err(|_| PspError::DecryptionFailed)?;
+    let mut type5 = PrxType5::new(inbuf);
+    
+    // Desencriptamos el header usando la semilla externa.
+    // Type 5 usa internamente el comando KIRK_CMD5, no el CMD1.
+    type5.decrypt_header(tag.code as i32, Some(tag.key), Some(external_seed))
+        .map_err(|_| PspError::DecryptionFailed)?;
 
+    let xorbuff_before_0x10 = &xorbuff[0..0x10]
+    .try_into()
+    .map_err(|_| PspError::SizeError)?;
 
-    Ok(4892086)
+    // Once we validate
+    let valid = type5.is_valid(&xorbuff_before_0x10);
+
+    if !(valid) {
+        return Err(PspError::DecryptionFailed);
+    }
+
+    let mut final_kirk_header = [0u8;0x90];
+    
+    final_kirk_header[0x60..0x70].copy_from_slice(type5.kirk_metadata());
+
+    let xorbuff_after_10 = &xorbuff[0x10..0x20];
+
+    decrypt_kirk_header(
+        &mut final_kirk_header[0x00..0x40], 
+        type5.kirk_header(), 
+        xorbuff_after_10, 
+        tag.code as i32
+    ).map_err(|_| PspError::DecryptionFailed)?;
+
+    final_kirk_header[0x70] = 1;
+
+    let kirk_cmd = KirkCmd1Header::new(&final_kirk_header);
+
+    let real_size = decrypt_size as usize;
+    let padded_size = if real_size % 16 == 0 {
+        real_size
+    } else {
+        real_size + (16 - (real_size % 16))
+    };
+
+    inbuf[0x40..0xD0].copy_from_slice(&final_kirk_header);
+    inbuf[0xD0..0x150].copy_from_slice(type5.prx_header());
+
+    let payload = &mut inbuf[0xD0 .. 0xD0 + padded_size];
+
+    kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
+        .map_err(|_| PspError::DecryptionFailed)?;
+
+    Ok(real_size)   
 }
-
 
 pub fn decrypt_kirk_header(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8], key_id: i32) -> Result<(), KirkError>{
     for i in 0..0x40 {
@@ -746,7 +820,7 @@ pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) ->
 
 // ESTA VA A SER LA ÚNICA FUNCIÓN PÚBLICA. 
 // TO-DO: FINALIZADA LA FUNCIÓN. PONER TODO EL PRIVADO
-pub fn decrypt_prx(inbuf: &mut [u8]) -> Result<usize, PspError>{
+pub fn decrypt_prx(inbuf: &mut [u8], seed: Option<&[u8; 16]>) -> Result<usize, PspError>{
     let tag = u32::from_le_bytes(
         inbuf[0xD0..0xD0+4]
         .try_into().map_err(|_| PspError::PointerError)?
@@ -757,6 +831,11 @@ pub fn decrypt_prx(inbuf: &mut [u8]) -> Result<usize, PspError>{
     psp_decrypt_type0(inbuf)
         .or_else(|_| psp_decrypt_type1(inbuf))
         .or_else(|_| psp_decrypt_type2(inbuf))
+        .or_else(|_| {
+            // Si llega hasta acá y es Type 5, exige la seed que le pasó el main
+            let actual_seed = seed.ok_or(PspError::MissingSeed)?;
+            psp_decrypt_type5(inbuf, actual_seed)
+        })
 }
 
 

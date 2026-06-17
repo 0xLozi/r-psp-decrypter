@@ -36,30 +36,65 @@ fn main() -> Result<(), PspError>{
     };
 
     let mut eboot_data = Vec::new();
+
     if let Err(e) = file.read_to_end(&mut eboot_data) {
         eprintln!("Error al leer el archivo: {}", e);
         return Err(PspError::DecryptionFailed);
     }
 
-    match decrypt_prx(&mut eboot_data) {
-        Ok(_) => {
-            // If everything worked well, then we save the pure .ELF
+    if eboot_data.len() < 4 {
+        eprintln!("El archivo es demasiado pequeño.");
+        return Err(PspError::DecryptionFailed);
+    }
 
-            let offset_elf = (0..eboot_data.len() - 4)
-                .find(|&i| eboot_data[i..i + 4] == [0x7F, 0x45, 0x4C, 0x46])
-                .expect("No se encontró la cabecera ELF");
+    let magic = &eboot_data[0..4];
 
-            let pure_elf = &eboot_data[offset_elf..];
+    if magic == b"~PSP" {
+        // THIS MEANS is a normal game. Thus it'll be type 1 or type 2 , etc.
+        println!("~PSP header detected. Decrypting game...");
 
-            let mut out_file = File::create(&ruta_salida).map_err(|_| PspError::FileCreationFailed)?;
+        match decrypt_prx(&mut eboot_data, None) {
+            Ok(_) => {
+                let offset_elf = (0..eboot_data.len() - 4)
+                    .find(|&i| eboot_data[i..i + 4] == [0x7F, 0x45, 0x4C, 0x46])
+                    .expect("No se encontró la cabecera ELF");
+                
+                let pure_elf = &eboot_data[offset_elf..];
 
-            out_file.write_all(pure_elf).map_err(|_| PspError::FileCreationFailed)?;
+                let mut out_file = File::create(&ruta_salida)
+                .map_err(|_| PspError::FileCreationFailed)?;
 
-            println!("Exito!!! Archivo guardado en: {}", ruta_salida);
+                out_file
+                    .write_all(pure_elf)
+                    .map_err(|_| PspError::FileCreationFailed)?;
+
+                println!("Exito!!! Archivo guardado en: {}", ruta_salida);
+
+            }
+            Err(e) => {
+                eprintln!("Decryption failed... {:?}", e);
+            }
         }
-        Err(e) => {
-            eprintln!("Falló la desencriptación: {:?}", e);
-        }
+
+    } else if magic == b"\x00PBP" {
+        // This means it's an official update or a container
+        println!("PBP header detected. decyrption mode (Type 5).");
+
+        let psar_offset = u32::from_le_bytes(eboot_data[0x24..0x28].try_into().unwrap()) as usize;
+
+        // Extract the seed from PSAR
+        // let external_seed = extract_seed_psar(&eboot_data[psar_offset..]);
+
+        // Extract the decrypted prx inside PSAR
+        // let mut internal_prx = extract_prx_psar(&eboot_data[psar_offset..]);
+
+        // send fro decryption sending the seed
+        // match decrypt_prx(&mut prx_interno, Some(&external_seed)) { ... }
+
+        println!("PBP/PSAR implementation pending...");
+    } else {
+        eprintln!("File format not supported. Magic: {:?}", magic);
+        return Err(PspError::DecryptionFailed);
     }
 
     Ok(())
