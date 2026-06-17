@@ -586,8 +586,6 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
     kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
         .map_err(|_| PspError::DecryptionFailed)?;
 
-    inbuf.copy_within(0xD0 .. 0xD0 + real_size, 0x150);
-
     Ok(real_size)
 }
 
@@ -678,7 +676,6 @@ pub fn psp_decrypt_type2(inbuf: &mut [u8]) -> Result<usize, PspError> {
     // Momento de la verdad...
     kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
         .map_err(|_| PspError::DecryptionFailed)?;
-    inbuf.copy_within(0xD0 .. 0xD0 + real_size, 0x150);
 
     Ok(real_size)   
 }
