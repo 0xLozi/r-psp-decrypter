@@ -1,1 +1,0 @@
-Understand more about decrypt type 1, it's kinda messy the code so refactor it

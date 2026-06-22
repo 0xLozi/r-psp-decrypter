@@ -926,5 +926,10 @@ mod tests {
 
         Ok(())
    }
+
+//    fn test_decryption_type5_succeeds() -> Result<(), PspError> {
+//         let ruta_eboot = "";
+
+//    }
 }
 
