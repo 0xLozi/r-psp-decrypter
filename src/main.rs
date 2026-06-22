@@ -11,6 +11,7 @@ use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
 use prx_types::decrypt_prx;
+use crate::kirk_lib::kirk_engine::kirk7;
 
 
 fn main() -> Result<(), PspError>{
@@ -175,6 +176,10 @@ fn demangle_psar_header(pIn: &mut [u8], pOut: &mut [u8], psar_version: u8) -> Re
 
     // TODO: Call the kirk engine here
     // kirk_cmd_7(&mut buffer)?
+    kirk7(&mut buffer[20..(20+0x130)], 0x55)
+            .map_err(|_| PspError::DecryptionFailed)?;
+    
+    buffer.copy_within(20..(20+0x130), 0);
         
     if psar_version == 5 {
         for i in 0..0x130 {
