@@ -7,6 +7,9 @@
 ![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 
+## Overview
+This is a command-line tool designed to run on modern operating systems (Windows, macOS, Linux). It unpacks and decrypts Sony PSP executable files by software-emulating the original hardware cryptography engine. **Note: This is a PC tool, not a PSP homebrew application.**
+
 ## Features
 
 - **Automatic encryption type detection** (tag parsing)
