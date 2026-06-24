@@ -23,12 +23,12 @@ fn main() -> Result<(), PspError>{
         return Err(PspError::DecryptionFailed);
     }
 
-    let ruta_entrada = &args[1];
-    let ruta_salida = format!("{}.dec", ruta_entrada);
-    println!("Opening file: {}", ruta_entrada);
+    let entry_route = &args[1];
+    let exit_route = format!("{}.dec", entry_route);
+    println!("Opening file: {}", entry_route);
 
     // Now we read the file
-    let mut file = match File::open(ruta_entrada) {
+    let mut file = match File::open(entry_route) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("No se pudo abrir el archivo {}", e);
@@ -62,14 +62,14 @@ fn main() -> Result<(), PspError>{
                 
                 let pure_elf = &eboot_data[offset_elf..];
 
-                let mut out_file = File::create(&ruta_salida)
+                let mut out_file = File::create(&exit_route)
                 .map_err(|_| PspError::FileCreationFailed)?;
 
                 out_file
                     .write_all(pure_elf)
                     .map_err(|_| PspError::FileCreationFailed)?;
 
-                println!("Exito!!! Archivo guardado en: {}", ruta_salida);
+                println!("Success. File saved at {}", exit_route);
 
             }
             Err(e) => {
@@ -79,39 +79,52 @@ fn main() -> Result<(), PspError>{
 
     } else if magic == b"\x00PBP" {
         // This means it's an official update or a container
-        println!("PBP header detected. decyrption mode (Type 5).");
+        println!("PBP header detected. decryption mode (Type 5).");
 
         let psar_offset = u32::from_le_bytes(
-            eboot_data[0x24..0x28].try_into().unwrap()
+            eboot_data[0x24..0x28].try_into().map_err(|_| PspError::DecryptionFailed)?
         ) as usize;
 
         let psar_data = &eboot_data[psar_offset..];
 
         // We read de signature in order to see if we are positioned correctly
         if &psar_data[0..4] != b"PSAR" {
-            eprintln!("Error: No se encontró la bóveda PSAR en el offset 0x{:X}", psar_offset);
+            eprintln!("Error: Couldn't find PSAR vault at offset 0x{:X}", psar_offset);
             return Err(PspError::DecryptionFailed);
         }
 
+        // inside Imhex, the size is 2 bytes. Therefore the representation is uint16_t
+        let psar_version = u8::from_le_bytes(
+            psar_data[4..6]
+                .try_into()
+                .map_err(|_| PspError::DecryptionFailed)?
+        );
+
         println!("Psar Found lmaooo");
 
+        println!(
+            "Psar: {}",
+            std::str::from_utf8(&psar_data[0..4]).unwrap()
+        );
 
-        // La cabecera del PSAR (versión firmware nuevo) tiene diferentes versiones.
-        // Las versiones 6.60 suelen tener una cabecera extendida.
-        // El tamaño total del PSAR (para saber hasta dónde leer) suele estar en 0x1C.
+        // The PSAR header contains different versions
+        // Versions from 6.60 usually contains an extended header
+        // The total size of PSAR shows off at 0x1C
         
-        // Pero lo que nos importa para la llave matemática suele estar en un bloque 
-        // de información a partir del offset 0x20 o 0x200 dependiendo del tipo exacto.
-        
-        // 3. (Futuro) Generar la seed en base a la cabecera
-        // let external_seed = generar_semilla_psar(&psar_data_header);
-        
-        // 4. (Futuro) Extraer el primer PRX
-        // let prx_buffer = extraer_prx_de_psar(&psar_data, indice);
+        // But what matters for the key math usually appears in an information block 
+        // from 0x20 to 0x200 depending on the exact type
 
-        // 5. (Futuro) Mandarlo a tu motor
-        // let size = psp_decrypt::decrypt_prx(&mut prx_buffer, Some(&external_seed))?;
-        println!("Falta implementar la matemática del PSAR, ¡pero la ruta está lista!");
+        // We have to generate the seed based of the header
+        // let external_seed = generate_seed_psar(&psar_data_header);
+
+        // Extract the first PRX
+        // let prx_buffer = extract_prx_from_psar(&psar_data, index);
+
+        // Send it to out Engine
+        // let size = psp_decrypt::decrypt_prx(&mut prx_buffer, Some(&externar_seed))?;
+        println!("We need to implement the PSAR mathematitian tool, but the route is ready");
+        let mut buffer_result = [0u8; 0x130];
+        demangle_psar_header(&psar_data, &mut buffer_result, psar_version)?;
     } else {
         eprintln!("File format not supported. Magic: {:?}", magic);
         return Err(PspError::DecryptionFailed);
@@ -129,7 +142,7 @@ fn main() -> Result<(), PspError>{
     // pl[4] = 0x130;
 
 // for 1.50 and later, they mangled the plaintext parts of the header
-fn demangle_psar_header(pIn: &mut [u8], pOut: &mut [u8], psar_version: u8) -> Result<(), PspError> {
+fn demangle_psar_header(pIn: &[u8], pOut: &mut [u8], psar_version: u8) -> Result<(), PspError> {
     let mut buffer = [0u8;20+0x130]; // or 0x34
 
     // Defining the keys just in case the version == 5
@@ -144,7 +157,7 @@ fn demangle_psar_header(pIn: &mut [u8], pOut: &mut [u8], psar_version: u8) -> Re
     ];
 
     // Security first!!
-    // inside the tool: it's 20, but 0x14 is the hexadecimal one
+    // inside the tool: it's 20, but 0x14 is the hexadecimal value
     if pIn.len() < 0x130 || pOut.len() < 0x130 {
         eprintln!("Error: Chunk too small to demangle");
         return Err(PspError::SizeError);
@@ -175,11 +188,8 @@ fn demangle_psar_header(pIn: &mut [u8], pOut: &mut [u8], psar_version: u8) -> Re
     // sceUtilsBufferCopyWithRange(buffer, 20+0x130, buffer, 20+0x130, 0x7);
 
     // TODO: Call the kirk engine here
-    // kirk_cmd_7(&mut buffer)?
-    kirk7(&mut buffer[20..(20+0x130)], 0x55)
-            .map_err(|_| PspError::DecryptionFailed)?;
-    
-    buffer.copy_within(20..(20+0x130), 0);
+    execute_kirk_cmd7(&mut buffer)?;
+
         
     if psar_version == 5 {
         for i in 0..0x130 {
@@ -189,5 +199,16 @@ fn demangle_psar_header(pIn: &mut [u8], pOut: &mut [u8], psar_version: u8) -> Re
 
     pOut[..0x130].copy_from_slice(&buffer[..0x130]);
 
+    Ok(())
+}
+
+fn execute_kirk_cmd7(buffer: &mut[u8]) -> Result<(), PspError> {
+    // twelve because 4 times 3 = 12
+    // Safely builds the 32-bit ID from 4 bytes, avoiding pointer-casting UB and Alignment Faults.
+    let key_id = i32::from_le_bytes(buffer[12..16].try_into().map_err(|_| PspError::InvalidHeader)?);
+    kirk7(&mut buffer[20..(20+0x130)], key_id)
+            .map_err(|_| PspError::DecryptionFailed)?;
+    
+    buffer.copy_within(20..(20+0x130), 0);
     Ok(())
 }
