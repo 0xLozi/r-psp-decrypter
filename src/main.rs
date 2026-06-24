@@ -93,12 +93,8 @@ fn main() -> Result<(), PspError>{
             return Err(PspError::DecryptionFailed);
         }
 
-        // inside Imhex, the size is 2 bytes. Therefore the representation is uint16_t
-        let psar_version = u8::from_le_bytes(
-            psar_data[4..6]
-                .try_into()
-                .map_err(|_| PspError::DecryptionFailed)?
-        );
+        // inside Imhex, the size is 1 byte. Therefore the representation is uint8_t
+        let psar_version = psar_data[4];
 
         println!("Psar Found lmaooo");
 
