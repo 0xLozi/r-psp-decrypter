@@ -120,7 +120,7 @@ fn main() -> Result<(), PspError>{
         // let size = psp_decrypt::decrypt_prx(&mut prx_buffer, Some(&externar_seed))?;
         println!("We need to implement the PSAR mathematitian tool, but the route is ready");
         let mut buffer_result = [0u8; 0x130];
-        demangle_psar_header(&psar_data, &mut buffer_result, psar_version)?;
+        demangle_psar_header(&psar_data[0x10 .. 0x10 + 0x130], &mut buffer_result, psar_version)?;
     } else {
         eprintln!("File format not supported. Magic: {:?}", magic);
         return Err(PspError::DecryptionFailed);
