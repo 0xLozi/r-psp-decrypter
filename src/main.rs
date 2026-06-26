@@ -103,6 +103,7 @@ fn main() -> Result<(), PspError>{
             std::str::from_utf8(&psar_data[0..4]).unwrap()
         );
 
+
         // The PSAR header contains different versions
         // Versions from 6.60 usually contains an extended header
         // The total size of PSAR shows off at 0x1C
@@ -121,6 +122,7 @@ fn main() -> Result<(), PspError>{
         println!("We need to implement the PSAR mathematitian tool, but the route is ready");
         let mut buffer_result = [0u8; 0x130];
         demangle_psar_header(&psar_data[0x10 .. 0x10 + 0x130], &mut buffer_result, psar_version)?;
+        println!("{:X?}", buffer_result);
     } else {
         eprintln!("File format not supported. Magic: {:?}", magic);
         return Err(PspError::DecryptionFailed);
@@ -207,4 +209,62 @@ fn execute_kirk_cmd7(buffer: &mut[u8]) -> Result<(), PspError> {
     
     buffer.copy_within(20..(20+0x130), 0);
     Ok(())
+}
+
+fn pspPsarInit(dataPSAR: &[u8], dataOut: &[u8], dataOut2: &[u8]) -> Result<(), PspError> {
+    let data_psar: &[u8] = &[0x50, 0x53, 0x41, 0x52]; // this means "PSAR" in hex
+    let header: &[u8] = &dataPSAR[0..4];
+
+    if data_psar == header {
+        println!("It's a PSAR file!!!");
+    } else {
+        println!("It's not a PSAR file!!!");
+        return Err(PspError::DecryptionFailed)?
+    }
+
+    // 3.5X M33, and 3.60 unofficial psar's
+    let decrypted = {
+        // Check Bounds First (For safety reasons)
+        if data_psar.len() < 0x24 {
+            return Err(PspError::TooShort);
+        }
+
+        let magic_value = u32::from_le_bytes(
+            data_psar[0x20..0x24].try_into().unwrap() // Here "unwrap" it's ok since we know it's exactly 4 bytes
+        );
+
+        magic_value == 0x2C333333
+    };
+
+    let overhead = {
+        if decrypted { 0 } else { 0x150 }
+    };
+
+    // unwrap is safe because we know that we aren't out of bounds
+    let version = u16::from_le_bytes(dataPSAR[4..6].try_into().unwrap());
+
+
+
+
+    
+
+
+
+
+    Ok(())
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*; // Importamos PrxType1 y demas
+    use std::fs::File;
+    use std::io::{Read, Write};
+
+    #[test]
+    fn test_psp_psar_init_succeeded() -> Result<(), PspError> {
+        let slice: &[u8] = &[0x50, 0x53, 0x41, 0x52]; // this means "PSAR" in hex
+        pspPsarInit(slice, slice, slice)
+    }
 }

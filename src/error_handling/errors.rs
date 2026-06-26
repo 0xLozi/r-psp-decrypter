@@ -39,7 +39,13 @@ pub enum PspError {
     FileCreationFailed,
 
     #[error("You need a seed in order to decrypt type 5")]
-    MissingSeed
+    MissingSeed,
+
+    #[error("Alignment Fault...")]
+    AlignmentFault,
+
+    #[error("File size len() too low...")]
+    TooShort
 }
 
 
