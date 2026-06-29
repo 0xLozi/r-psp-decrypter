@@ -1,9 +1,11 @@
 use crate::{PsarContext, PspError, SIZE_A};
+use crate::prx_types::decrypt_prx;
+use crate::kirk7;
 
 const DATA_SIZE: usize = 3000000;
 
 
-pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &[u8], mut ctx: PsarContext) -> Result<(), PspError> {
+pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &[u8], ctx: &mut PsarContext) -> Result<(), PspError> {
     // kirk_init: but not neccessary
     let magic: [u8; 4] = data_psar[..4]
         .try_into()
@@ -37,7 +39,7 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &[u8], mut ctx: PsarContext) 
 
 
 
-fn psp_psar_init(data_psar: &[u8], data_out: &[u8], data_out_2: &[u8], mut ctx: PsarContext) -> Result<(), PspError> {
+fn psp_psar_init(data_psar: &[u8], data_out: &mut [u8], data_out_2: &mut [u8], ctx: &mut PsarContext) -> Result<usize, PspError> {
     let data_psar_magic: &[u8] = &[0x50, 0x53, 0x41, 0x52]; // this means "PSAR" in hex
     let header: &[u8] = &data_psar[0..4];
 
@@ -75,23 +77,156 @@ fn psp_psar_init(data_psar: &[u8], data_out: &[u8], data_out_2: &[u8], mut ctx: 
     ctx.psar_version = u16::from_le_bytes(data_psar[4..6].try_into().unwrap());
     println!("{}", ctx.psar_version);
     
-    let cb_out = decode_block(&data_psar[0x10..], ctx.overhead + SIZE_A, data_out)?;
+    let mut cb_out = decode_block(&data_psar[0x10..], ctx.overhead + SIZE_A, data_out, ctx, None)?;
+
+    if cb_out <= 0 {
+        return Err(PspError::TagNotFound);
+    }
+
+    if cb_out != SIZE_A
+    {
+        return Err(PspError::DecryptionFailed);
+    }
+
+    ctx.i_base = 0x10+ctx.overhead+SIZE_A;
+    // This points to the next block to decode (0x10 aligned)
+
+    if ctx.decrypted {
+        cb_out = decode_block(
+            &data_psar[0x10+ctx.overhead+SIZE_A..], 
+            data_out[0x90] as usize, 
+            data_out_2, 
+            ctx, 
+            None
+        )?;
+
+        if cb_out <= 0 {
+            return Err(PspError::DecryptionFailed);
+        }
+
+        ctx.i_base += ctx.overhead+cb_out;
+        return Ok(0);
+    }
+
+    if ctx.psar_version != 1 {
+        
+        
+    }
+
+    // random number
+    Ok(219358712)
+}
+
+    // let cb_out = decode_block(
+    // &data_psar[0x10..], 
+    // ctx.overhead + SIZE_A, 
+    // data_out)?;
+fn decode_block(
+    p_in: &[u8],
+    cb_in: usize,
+    p_out: &mut [u8],
+    ctx: &PsarContext,
+    seed: Option<&[u8;16]>,
+) -> Result<usize, PspError> {
+
+    // memcpy(pOut, pIn, cbIn + 0x10); // copy a little more for $10 page alignment
+    // The same would be
+    p_out[..cb_in + 0x10].copy_from_slice(&p_in[..cb_in+0x10]);
+
+    // I don't know the meaning of this variables
+    // let ret = 0;
+    // let cb_out = 0;
+    if ctx.psar_version != 1 {
+        demangle_psar_header(p_in, p_out, ctx)?;
+    }
+
+    // two arguments of type `&mut [u8]` and `Option<&[u8; 16]>` are missing
+    // later i'll manage to understand where "seed" comes from
+    let cb_out = decrypt_prx(p_out, seed)?;
+
+    if cb_out < 0 {
+        // Unknown psar tag...
+        return Ok(0xFFFFFFFC);
+    }
+
+    // random number
+    Ok(cb_out)
+}
 
 
-    // uncomment after doing the ctx
-    // let cb_out = decode_block(&data_psar[0x10..], overhead + SIZE_A, data_out);
 
+// for 1.50 and later, they mangled the plaintext parts of the header
+fn demangle_psar_header(p_in: &[u8], p_out: &mut [u8], ctx: &PsarContext) -> Result<(), PspError> {
+    let mut buffer = [0u8;20+0x130]; // or 0x34
+
+    // Defining the keys just in case the version == 5
+    let k1: [u8; 16] = [
+        0xD8, 0x69, 0xB8, 0x95, 0x33, 0x6B, 0x63, 0x34, 
+        0x98, 0xB9, 0xFC, 0x3C, 0xB7, 0x26, 0x2B, 0xD7
+    ];
+
+    let k2: [u8; 16] = [
+        0x0D, 0xA0, 0x90, 0x84, 0xAF, 0x9E, 0xB6, 0xE2, 
+        0xD2, 0x94, 0xF2, 0xAA, 0xEF, 0x99, 0x68, 0x71
+    ];
+
+    // Security first!!
+    // inside the tool: it's 20, but 0x14 is the hexadecimal value
+    if p_in.len() < 0x130 || p_out.len() < 0x130 {
+        eprintln!("Error: Chunk too small to demangle");
+        return Err(PspError::SizeError);
+    }
+
+    // Copy encrypted payload into our working buffer
+    buffer[20..(20+0x130)].copy_from_slice(&p_in[..0x130]);
+
+    if ctx.psar_version == 5 { 
+        for i in 0..0x130 { 
+            buffer[20+i] ^= k1[i & 0xF]; 
+        } 
+    }
+
+    let raw_ptr = buffer.as_mut_ptr();
+
+    // Opening the gates of abyss hahahaah
+    unsafe {
+        let pl = std::slice::from_raw_parts_mut(raw_ptr as *mut u32, 5);
+        // And then we write this exactly as C++ code!!!
+        pl[0] = 5;
+        pl[1] = 0; pl[2] = 0;
+        // This is so risky
+        pl[3] = 0x55;
+        pl[4] = 0x130;
+    }
+    // We are missing Hardware Decryption
+    // sceUtilsBufferCopyWithRange(buffer, 20+0x130, buffer, 20+0x130, 0x7);
+
+    // TODO: Call the kirk engine here
+    execute_kirk_cmd7(&mut buffer)?;
+        
+    if ctx.psar_version == 5 {
+        for i in 0..0x130 {
+            buffer[i] ^= k2[i % 16];
+        }
+    }
+
+    p_out[..0x130].copy_from_slice(&buffer[..0x130]);
 
     Ok(())
 }
 
-fn decode_block(p_in: &[u8], cb_in: usize, p_out: &[u8], ctx: PsarContext) -> Result<(), PspError> {
-    if ctx.decrypted {
-        if (p_in)
+fn execute_kirk_cmd7(buffer: &mut[u8]) -> Result<(), PspError> {
+    // twelve because 4 times 3 = 12
+    // Safely builds the 32-bit ID from 4 bytes, avoiding pointer-casting UB and Alignment Faults.
+    let key_id = i32::from_le_bytes (
+        buffer[12..16]
+        .try_into()
+        .map_err(|_| PspError::InvalidHeader)?
+    );
 
-    }
-
-
-
+    kirk7(&mut buffer[20..(20+0x130)], key_id)
+            .map_err(|_| PspError::DecryptionFailed)?;
+    
+    buffer.copy_within(20..(20+0x130), 0);
     Ok(())
 }

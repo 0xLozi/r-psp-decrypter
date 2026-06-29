@@ -1,5 +1,3 @@
-use clap::Parser;
-use std::fs;
 mod keys;
 mod tag_info;
 mod keys_service;
@@ -7,7 +5,6 @@ mod kirk_lib;
 mod error_handling;
 mod prx_types;
 use error_handling::errors::PspError;
-use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
 use prx_types::decrypt_prx;
@@ -16,19 +13,12 @@ mod psar_decrypter;
 
 const SIZE_A: usize = 0x110;
 
-// later on I'll implement this
-// pub struct PsarContext {
-//     i_base: i32,
-//     cb_chunk: i32,
-//     psar_version: i32,
-//     decrypted: bool,
-//     overhead: usize,
-// }
 
 pub struct PsarContext {
     decrypted: bool,
     overhead: usize,
     psar_version: u16,
+    i_base: usize,
 }
 
 impl PsarContext {
@@ -126,7 +116,7 @@ fn main() -> Result<(), PspError>{
         }
 
         // inside Imhex, the size is 1 byte. Therefore the representation is uint8_t
-        ctx.psar_version = psar_data[4];
+        ctx.psar_version = psar_data[4] as u16;
 
         println!("Psar Found lmaooo");
 
@@ -155,8 +145,6 @@ fn main() -> Result<(), PspError>{
 
         psar_decrypter::psp_decrypt_psar(psar_data, &mut buffer_result, ctx)?;
         println!("We need to implement the PSAR mathematitian tool, but the route is ready");
-        demangle_psar_header(&psar_data[0x10 .. 0x10 + 0x130], &mut buffer_result, ctx)?;
-        println!("{:X?}", buffer_result);
     } else {
         eprintln!("File format not supported. Magic: {:?}", magic);
         return Err(PspError::DecryptionFailed);
@@ -165,102 +153,4 @@ fn main() -> Result<(), PspError>{
     Ok(())
 
 }
-    // int i;
-    // if (psarVersion == 5) for ( i = 0; i < 0x130; ++i ) { buffer[20+i] ^= K1[i & 0xF]; }
-    // u32* pl = (u32*)buffer; // first 20 bytes
-    // pl[0] = 5;
-    // pl[1] = pl[2] = 0;
-    // pl[3] = 0x55;
-    // pl[4] = 0x130;
 
-// for 1.50 and later, they mangled the plaintext parts of the header
-fn demangle_psar_header(p_in: &[u8], p_out: &mut [u8], ctx: PsarContext) -> Result<(), PspError> {
-    let mut buffer = [0u8;20+0x130]; // or 0x34
-
-    // Defining the keys just in case the version == 5
-    let k1: [u8; 16] = [
-        0xD8, 0x69, 0xB8, 0x95, 0x33, 0x6B, 0x63, 0x34, 
-        0x98, 0xB9, 0xFC, 0x3C, 0xB7, 0x26, 0x2B, 0xD7
-    ];
-
-    let k2: [u8; 16] = [
-        0x0D, 0xA0, 0x90, 0x84, 0xAF, 0x9E, 0xB6, 0xE2, 
-        0xD2, 0x94, 0xF2, 0xAA, 0xEF, 0x99, 0x68, 0x71
-    ];
-
-    // Security first!!
-    // inside the tool: it's 20, but 0x14 is the hexadecimal value
-    if p_in.len() < 0x130 || p_out.len() < 0x130 {
-        eprintln!("Error: Chunk too small to demangle");
-        return Err(PspError::SizeError);
-    }
-
-    // Copy encrypted payload into our working buffer
-    buffer[20..(20+0x130)].copy_from_slice(&p_in[..0x130]);
-
-    if ctx.psar_version == 5 { 
-        for i in 0..0x130 { 
-            buffer[20+i] ^= k1[i & 0xF]; 
-        } 
-    }
-
-    let raw_ptr = buffer.as_mut_ptr();
-
-    // Opening the gates of abyss hahahaah
-    unsafe {
-        let pl = std::slice::from_raw_parts_mut(raw_ptr as *mut u32, 5);
-        // And then we write this exactly as C++ code!!!
-        pl[0] = 5;
-        pl[1] = 0; pl[2] = 0;
-        // This is so risky
-        pl[3] = 0x55;
-        pl[4] = 0x130;
-    }
-    // We are missing Hardware Decryption
-    // sceUtilsBufferCopyWithRange(buffer, 20+0x130, buffer, 20+0x130, 0x7);
-
-    // TODO: Call the kirk engine here
-    execute_kirk_cmd7(&mut buffer)?;
-        
-    if ctx.psar_version == 5 {
-        for i in 0..0x130 {
-            buffer[i] ^= k2[i % 16];
-        }
-    }
-
-    p_out[..0x130].copy_from_slice(&buffer[..0x130]);
-
-    Ok(())
-}
-
-fn execute_kirk_cmd7(buffer: &mut[u8]) -> Result<(), PspError> {
-    // twelve because 4 times 3 = 12
-    // Safely builds the 32-bit ID from 4 bytes, avoiding pointer-casting UB and Alignment Faults.
-    let key_id = i32::from_le_bytes (
-        buffer[12..16]
-        .try_into()
-        .map_err(|_| PspError::InvalidHeader)?
-    );
-
-    kirk7(&mut buffer[20..(20+0x130)], key_id)
-            .map_err(|_| PspError::DecryptionFailed)?;
-    
-    buffer.copy_within(20..(20+0x130), 0);
-    Ok(())
-}
-
-
-
-
-#[cfg(test)]
-mod tests {
-    use super::*; // Importamos PrxType1 y demas
-    use std::fs::File;
-    use std::io::{Read, Write};
-
-    #[test]
-    fn test_psp_psar_init_succeeded() -> Result<(), PspError> {
-        let slice: &[u8] = &[0x50, 0x53, 0x41, 0x52]; // this means "PSAR" in hex
-        pspPsarInit(slice, slice, slice)
-    }
-}
