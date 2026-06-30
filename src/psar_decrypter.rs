@@ -16,24 +16,17 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &[u8], ctx: &mut PsarContext)
         return Err(PspError::ValidationFailed);
     }
 
-    let data_1: [u8; DATA_SIZE] = [0u8; DATA_SIZE];
-    let data_2: [u8; DATA_SIZE] = [0u8; DATA_SIZE];
+    let mut data_1: [u8; DATA_SIZE] = [0u8; DATA_SIZE];
+    let mut data_2: [u8; DATA_SIZE] = [0u8; DATA_SIZE];
 
     println!("PSAR Version: {}", ctx.psar_version);
 
-    psp_psar_init(data_psar, &data_1, &data_2, ctx)?;
-    
-
-
+    psp_psar_init(data_psar, &mut data_1, &mut data_2, ctx)?;
     // int res = pspPSARInit(dataPSAR, data1, data2);
     // if (res < 0)
     // {
     //     printf("pspPSARInit failed with error 0x%08X!.\n", res);
     // }
-
-
-
-
     Ok(())
 }
 
@@ -49,7 +42,6 @@ fn psp_psar_init(data_psar: &[u8], data_out: &mut [u8], data_out_2: &mut [u8], c
         println!("It's not a PSAR file!!!");
         return Err(PspError::DecryptionFailed)?
     }
-
 
     // 3.5X M33, and 3.60 unofficial psar's
     ctx.decrypted = {
@@ -129,27 +121,24 @@ fn decode_block(
     seed: Option<&[u8;16]>,
 ) -> Result<usize, PspError> {
 
+    if ctx.decrypted {
+        p_out[..cb_in].copy_from_slice(&p_in[..cb_in]);
+        return Ok(cb_in)
+    }
+
     // memcpy(pOut, pIn, cbIn + 0x10); // copy a little more for $10 page alignment
     // The same would be
+    // Check dev_notes/notes.md from deep summary about why whe add 0x10 to the equation
     p_out[..cb_in + 0x10].copy_from_slice(&p_in[..cb_in+0x10]);
 
-    // I don't know the meaning of this variables
-    // let ret = 0;
-    // let cb_out = 0;
     if ctx.psar_version != 1 {
-        demangle_psar_header(p_in, p_out, ctx)?;
+        demangle_psar_header(&p_in[0x20..], &mut p_out[0x20..], ctx)?;
     }
 
     // two arguments of type `&mut [u8]` and `Option<&[u8; 16]>` are missing
     // later i'll manage to understand where "seed" comes from
-    let cb_out = decrypt_prx(p_out, seed)?;
+    let cb_out = decrypt_prx(&mut p_out[..cb_in], seed)?;
 
-    if cb_out < 0 {
-        // Unknown psar tag...
-        return Ok(0xFFFFFFFC);
-    }
-
-    // random number
     Ok(cb_out)
 }
 
@@ -229,4 +218,34 @@ fn execute_kirk_cmd7(buffer: &mut[u8]) -> Result<(), PspError> {
     
     buffer.copy_within(20..(20+0x130), 0);
     Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_decode_block_fast_path() {
+        // First. We setup a fake context that says the file is already decrypted.
+        let mut ctx = PsarContext::new();
+        ctx.decrypted = true;
+
+        // 2. Setup our inputs and outputs
+        let input_data: [u8; 4] = [0xDE, 0xAD, 0xBE, 0xEF];
+        let mut output_buffer: [u8; 10] = [0; 10]; // Slightly larger buffer
+
+        // 3. Call the function
+        let result = decode_block(&input_data, 4, &mut output_buffer, &ctx, None);
+
+        // 4. Assertions
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 4); // Should return cb_in (4)
+        assert_eq!(&output_buffer[..4], &[0xDE, 0xAD, 0xBE, 0xEF]); // Data should be perfectly copied
+    }
+
+    #[test]
+    fn test_decode_block_long_path() {
+
+    }
 }
