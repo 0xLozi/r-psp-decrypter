@@ -17,7 +17,7 @@ const SIZE_A: usize = 0x110;
 pub struct PsarContext {
     decrypted: bool,
     overhead: usize,
-    psar_version: u16,
+    psar_version: u8,
     i_base: usize,
 }
 
@@ -118,7 +118,7 @@ fn main() -> Result<(), PspError>{
         }
 
         // inside Imhex, the size is 1 byte. Therefore the representation is uint8_t
-        ctx.psar_version = psar_data[4] as u16;
+        ctx.psar_version = psar_data[4];
 
         println!("Psar Found lmaooo");
 

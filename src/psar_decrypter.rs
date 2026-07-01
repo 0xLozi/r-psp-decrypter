@@ -1,7 +1,6 @@
 use crate::{PsarContext, PspError, SIZE_A};
 use crate::prx_types::decrypt_prx;
 use crate::kirk7;
-
 const DATA_SIZE: usize = 3000000;
 
 
@@ -22,15 +21,12 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &[u8], ctx: &mut PsarContext)
     println!("PSAR Version: {}", ctx.psar_version);
 
     psp_psar_init(data_psar, &mut data_1, &mut data_2, ctx)?;
-    // int res = pspPSARInit(dataPSAR, data1, data2);
-    // if (res < 0)
-    // {
-    //     printf("pspPSARInit failed with error 0x%08X!.\n", res);
-    // }
+
+
+
+
     Ok(())
 }
-
-
 
 fn psp_psar_init(data_psar: &[u8], data_out: &mut [u8], data_out_2: &mut [u8], ctx: &mut PsarContext) -> Result<usize, PspError> {
     let data_psar_magic: &[u8] = &[0x50, 0x53, 0x41, 0x52]; // this means "PSAR" in hex
@@ -44,32 +40,25 @@ fn psp_psar_init(data_psar: &[u8], data_out: &mut [u8], data_out_2: &mut [u8], c
     }
 
     // 3.5X M33, and 3.60 unofficial psar's
-    ctx.decrypted = {
-        if data_psar.len() < 0x24 {
-            return Err(PspError::TooShort);
-        };
-
-        let magic_value = u32::from_le_bytes(
-            data_psar[0x20..0x24].try_into().unwrap() // Here "unwrap" it's ok since we know it's exactly 4 bytes
-        );
-
-        magic_value == 0x2C333333
-    };
-
-    if ctx.decrypted {
-        println!("True");
+    if data_psar.len() < 0x24 {
+        return Err(PspError::TooShort);
     }
+
+    let layout_marker =
+        u32::from_le_bytes(data_psar[0x20..0x24].try_into().unwrap());
+    ctx.decrypted = layout_marker == 0x2C333333;
 
     ctx.overhead = {
         if ctx.decrypted { 0 } else { 0x150 }
     };
-
-    println!("{}", ctx.overhead);
-
-    ctx.psar_version = u16::from_le_bytes(data_psar[4..6].try_into().unwrap());
-    println!("{}", ctx.psar_version);
+        
+    // //oldschool = (dataPSAR[4] == 1); /* bogus update */
+    // psarVersion = dataPSAR[4];
+    // This is the original code. ImHex with the script from https://gist.github.com/playday3008/0c8ba916ba3b1c4f52654db6e3f85109 we can clearly see that the lo is 2 bytes size. But since I'm sticking to the decryption tool, I think I might use 1 byte then
+    // ctx.psar_version = u16::from_le_bytes(data_psar[4..6].try_into().unwrap());
+    ctx.psar_version = data_psar[4];
     
-    let mut cb_out = decode_block(&data_psar[0x10..], ctx.overhead + SIZE_A, data_out, ctx, None)?;
+    let mut cb_out = decode_block(&data_psar[0x10..], ctx.overhead + SIZE_A, data_out, ctx)?;
 
     if cb_out <= 0 {
         return Err(PspError::TagNotFound);
@@ -89,7 +78,6 @@ fn psp_psar_init(data_psar: &[u8], data_out: &mut [u8], data_out_2: &mut [u8], c
             data_out[0x90] as usize, 
             data_out_2, 
             ctx, 
-            None
         )?;
 
         if cb_out <= 0 {
@@ -109,16 +97,16 @@ fn psp_psar_init(data_psar: &[u8], data_out: &mut [u8], data_out_2: &mut [u8], c
     Ok(219358712)
 }
 
-    // let cb_out = decode_block(
-    // &data_psar[0x10..], 
-    // ctx.overhead + SIZE_A, 
-    // data_out)?;
+
+// let cb_out = decode_block(
+// &data_psar[0x10..], 
+// ctx.overhead + SIZE_A, 
+// data_out)?;
 fn decode_block(
     p_in: &[u8],
     cb_in: usize,
     p_out: &mut [u8],
     ctx: &PsarContext,
-    seed: Option<&[u8;16]>,
 ) -> Result<usize, PspError> {
 
     if ctx.decrypted {
@@ -128,21 +116,22 @@ fn decode_block(
 
     // memcpy(pOut, pIn, cbIn + 0x10); // copy a little more for $10 page alignment
     // The same would be
-    // Check dev_notes/notes.md from deep summary about why whe add 0x10 to the equation
+    // Check dev_notes/notes.md to get a deep summary about why whe add 0x10 to the equation
     p_out[..cb_in + 0x10].copy_from_slice(&p_in[..cb_in+0x10]);
 
+
+    // If psar_version != 1 we have to demanlge the inside 130 bytes...
     if ctx.psar_version != 1 {
         demangle_psar_header(&p_in[0x20..], &mut p_out[0x20..], ctx)?;
     }
 
-    // two arguments of type `&mut [u8]` and `Option<&[u8; 16]>` are missing
-    // later i'll manage to understand where "seed" comes from
-    let cb_out = decrypt_prx(&mut p_out[..cb_in], seed)?;
+        
+    // Technically we ain't sending the seed, look at this. I WAS HITTING A WALL SINCE I THOUGH I WAS SENDING A SEED, BUT COULDN'T FIND WHERE
+    // cbOut = pspDecryptPRX(pOut, pOut, cbIn);
+    let cb_out = decrypt_prx(&mut p_out[..cb_in], None)?;
 
     Ok(cb_out)
 }
-
-
 
 // for 1.50 and later, they mangled the plaintext parts of the header
 fn demangle_psar_header(p_in: &[u8], p_out: &mut [u8], ctx: &PsarContext) -> Result<(), PspError> {
@@ -236,7 +225,7 @@ mod tests {
         let mut output_buffer: [u8; 10] = [0; 10]; // Slightly larger buffer
 
         // 3. Call the function
-        let result = decode_block(&input_data, 4, &mut output_buffer, &ctx, None);
+        let result = decode_block(&input_data, 4, &mut output_buffer, &ctx);
 
         // 4. Assertions
         assert!(result.is_ok());
@@ -244,8 +233,4 @@ mod tests {
         assert_eq!(&output_buffer[..4], &[0xDE, 0xAD, 0xBE, 0xEF]); // Data should be perfectly copied
     }
 
-    #[test]
-    fn test_decode_block_long_path() {
-
-    }
 }
