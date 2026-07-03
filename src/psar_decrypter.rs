@@ -22,9 +22,6 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &[u8], ctx: &mut PsarContext)
 
     psp_psar_init(data_psar, &mut data_1, &mut data_2, ctx)?;
 
-
-
-
     Ok(())
 }
 
@@ -44,6 +41,7 @@ fn psp_psar_init(data_psar: &[u8], data_out: &mut [u8], data_out_2: &mut [u8], c
         return Err(PspError::TooShort);
     }
 
+    // This is for checking if it was decrypted or not
     let layout_marker =
         u32::from_le_bytes(data_psar[0x20..0x24].try_into().unwrap());
     ctx.decrypted = layout_marker == 0x2C333333;
@@ -51,7 +49,7 @@ fn psp_psar_init(data_psar: &[u8], data_out: &mut [u8], data_out_2: &mut [u8], c
     ctx.overhead = {
         if ctx.decrypted { 0 } else { 0x150 }
     };
-        
+
     // //oldschool = (dataPSAR[4] == 1); /* bogus update */
     // psarVersion = dataPSAR[4];
     // This is the original code. ImHex with the script from https://gist.github.com/playday3008/0c8ba916ba3b1c4f52654db6e3f85109 we can clearly see that the lo is 2 bytes size. But since I'm sticking to the decryption tool, I think I might use 1 byte then
@@ -70,7 +68,7 @@ fn psp_psar_init(data_psar: &[u8], data_out: &mut [u8], data_out_2: &mut [u8], c
     }
 
     ctx.i_base = 0x10+ctx.overhead+SIZE_A;
-    // This points to the next block to decode (0x10 aligned)
+    // i_base points to the next block to decode (0x10 aligned)
 
     if ctx.decrypted {
         cb_out = decode_block(
@@ -88,8 +86,21 @@ fn psp_psar_init(data_psar: &[u8], data_out: &mut [u8], data_out_2: &mut [u8], c
         return Ok(0);
     }
 
+    // ANALYZE THE ENTIRE THING HERE
     if ctx.psar_version != 1 {
-        
+        // Analyze this because I THINK IS WRONG... OR NOT
+       cb_out = decode_block(
+            &data_psar[0x10+ctx.overhead+SIZE_A..], 
+            ctx.overhead+144, 
+            data_out_2, ctx
+        )?;
+        println!("{}",cb_out);
+        if cb_out <= 0 {
+            // cb_out = decode_block(p_in, cb_in, p_out, ctx)
+            // if (cb_out <= 0) {
+            //     return Err(PspError::DecryptionFailed);
+            // }
+        }
         
     }
 
