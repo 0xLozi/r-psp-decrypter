@@ -22,6 +22,22 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &[u8], ctx: &mut PsarContext)
 
     psp_psar_init(data_psar, &mut data_1, &mut data_2, ctx)?;
 
+    // char version[10];
+    // strncpy(version, GetVersion((char *)data1+0x10), 10);
+    // version[9] = '\0';
+    // printf("Firmware version %s.\n", version);
+    // if (version[1] != '.' || strlen(version) != 4) {
+    //     printf("Invalid version!?\n");
+    //     return 1;
+    // }
+    // int intVersion = (version[0] - '0') * 100 + (version[2] - '0') * 10 + version[3] - '0';
+    // int table_mode;
+
+    
+
+
+
+
     Ok(())
 }
 
