@@ -22,18 +22,32 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &[u8], ctx: &mut PsarContext)
 
     psp_psar_init(data_psar, &mut data_1, &mut data_2, ctx)?;
 
-    // char version[10];
-    // strncpy(version, GetVersion((char *)data1+0x10), 10);
-    // version[9] = '\0';
-    // printf("Firmware version %s.\n", version);
-    // if (version[1] != '.' || strlen(version) != 4) {
-    //     printf("Invalid version!?\n");
-    //     return 1;
-    // }
-    // int intVersion = (version[0] - '0') * 100 + (version[2] - '0') * 10 + version[3] - '0';
-    // int table_mode;
-
+    // I do "try_into()" because I know that this'll work
+    let int_version = get_version(&data_1[0x10..0x14].try_into().unwrap())?;
+    println!("{}", int_version);
     
+    if int_version >= 380 && int_version < 400 {
+        ctx.table_mode = 1;
+    } else if int_version >= 400 && int_version < 500 {
+        ctx.table_mode = 2;
+    } else if int_version >= 500 && int_version < 600 {
+        ctx.table_mode = 3;
+    } else if int_version >= 610 && int_version < 630 && ctx.psar_version == 5 {
+        ctx.table_mode = 5;
+    } else if int_version >= 600 && int_version < 700 {
+        ctx.table_mode = 4;
+    } else {
+        ctx.table_mode = 0;
+    }
+
+    println!("Table mode: {}", ctx.table_mode);
+
+    // We don't have that option yet, so we skip that
+    // if (infoOnly) {
+    //     println("only info lmao")
+    //     return urmom
+    // }
+
 
 
 
@@ -260,4 +274,30 @@ mod tests {
         assert_eq!(&output_buffer[..4], &[0xDE, 0xAD, 0xBE, 0xEF]); // Data should be perfectly copied
     }
 
+}
+
+
+// let int_version = get_version(&data_1[0x10..0x14]);
+// Explanation at PBP_notes.md
+fn get_version(version_bytes: &[u8;4]) -> Result<u32, PspError> {
+    let version_str = std::str::from_utf8(version_bytes)
+    .map_err(|_| PspError::DecryptionFailed)?;
+
+    println!("Firmware version: {}", version_str);
+
+    // nth(1) means give me the second character in this string.
+    // I can convert this into a Vec<char> and then compare it easily... but it's redundant since I'm allocating memory for something that isn't significant
+    if version_str.chars().nth(1) != Some('.') || version_str.len() != 4 {
+        eprintln!("Invalid version!?");
+        return Err(PspError::ValidationFailed);
+    }
+
+    // Now let's convert it into integer!!!
+    let int_version: u32 = version_str
+        .replace(".", "")
+        .parse()
+        .map_err(|_| PspError::DecryptionFailed)?;
+
+
+    Ok(int_version)
 }
