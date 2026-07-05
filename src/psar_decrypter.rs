@@ -57,11 +57,34 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
     // Just in case I map the error so it's compatible to the PspError Result, even though the compiler didn't trigger anything, just in case
     setup_extraction_folders(out_dir).map_err(|_| PspError::FolderCreationFailed)?;
 
-    
+    // I'm not decided wheter use a "loop" or a "while-loop". I still don't know which one's better, so Imma just leave it like there
+    loop {
+        let mut log_str: String = String::new();
+        // NOTE:
+        // The original C/C++ code uses `char name[128]`, where `char` is a **1-byte**
+        // type used to store raw bytes (often a null-terminated C string).
+        //
+        // Rust's `char` is *not* equivalent... it represents a Unicode scalar value and
+        // occupies 4 bytes. Using `[char; 128]` would allocate 512 bytes instead of
+        // the expected 128 and would not match the original memory layout.
+        //
+        // Therefore, we use `[u8; 128]` to faithfully represent the original C buffer.
+        let mut name = [0u8; 128];
+
+        let mut cb_expanded = 0u32;
+        let mut pos = 0u32;
+        let mut sign_check = 0u32;
+
+        // put cb_expanded as mutable, I don't know yet if this decision is right. I'm just making hypothesis
+        let res = psp_psar_get_next_file(data_psar, &mut data_1, &mut data_2, &mut name, &mut cb_expanded, &mut pos, &mut sign_check, ctx)?;
 
 
 
 
+
+
+        break
+    }
 
     Ok(())
 }
@@ -325,6 +348,27 @@ fn setup_extraction_folders(outdir: &str) -> io::Result<()> {
     fs::create_dir_all(base_path.join("PSARDUMPER"))?;
 
     println!("Safe-room environment folders created successfully!");
+
+    Ok(())
+}
+
+
+fn psp_psar_get_next_file(data_psar: &[u8], data_1: &[u8;3000000], data_2: &[u8;3000000], name: &[u8;128], cb_expanded: &mut u32, pos: &mut u32, sign_check: &mut u32, ctx: &mut PsarContext) -> Result<(), PspError> {
+    let cb_out = 0u32;
+
+    // C++ Version:
+    // if (iBase >= (cbFile-OVERHEAD)) { return 0; }
+
+    // Rust Version:
+    // data_psar.len() IS the cbFile (the total size of the PSAR)
+    if ctx.i_base >= (data_psar.len() - ctx.overhead) {
+        // We reached the end of the file!
+        return Ok(()); 
+    }
+
+
+
+
 
     Ok(())
 }

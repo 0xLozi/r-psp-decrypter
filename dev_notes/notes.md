@@ -25,3 +25,24 @@ Result: The engine doesn't crash and the OS doesn't panic, so we simply ignore t
 
 **IMPORTANT**
 This padding is not a structural requirement of Sony's PSAR file format on disk. Sony doesn't care if a file size is divisible by 16. This is strictly a memory management trick used by hackers to keep PC tools from crashing when simulating clumsy hardware.
+
+
+### PSAR Extraction loop: own notes....
+`char name[128]`
+what it holds? -> Name of the current file being extraced, pulled from a 272 bytes Shipping Lable (THE SIZE_A). The while loop needs to know what to name the file inside my hard-drive
+Problem: Starting in Firmware 5.00, Sony hid filenames... (for example: kd/reboot.bin) doing a hashing algorithm, and as result of that, we have meaningless strings like `is5Dnum`
+
+`cb_expanded`
+It holds the target size of the file after it has been decompressed
+Many files inside PSAR are zipped to save space. So if the file is compressed, then the decryption engine needs to know exactly how many bytes the file will expand into so it knows when to stop unzipping and avoid something called `Buffer Overflow...`
+
+`pos` (This is the physical coordinate)
+It holds the exact byte offset where the current file is locate inside the `.PBP` file
+It act as a physical cursor, because there are LOTS OF PRX's modules inside the giant flat-pack, so `pos` updates dynamically every time `pspPSARGetNextFile` is called.
+
+`signcheck`
+It holds a flag indicating th ecurrent executable (`prx`) is cryptographically signed by Sony.
+So when the PSP tries to run a file, the KIRK chip inspects this seal. And if the file is official, then KIRK executes it!!!
+
+
+
