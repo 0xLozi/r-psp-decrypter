@@ -47,6 +47,32 @@ So... If you substract them (51-48) you get "3". They are extracting the first f
 #### How can we do this in rust?
 Rust's standard library is powerful with text. Therefore we don't need pointer math, manual null bytes, or ASCII substraction.
 
+---
+### table_modes
+Sony released firmware update -> Hackers would eventually figure out how to decrypt it by extracting the secret keys
+
+Sony couldn't change the physical KIRK hardware chip inside the consoles -> They chancged the software locks layered on top of it.
+
+Sony releases a new firmware update -> scrambled the PSAR Headers differently -> new cryptographic keys to distract the hackers
+
+- **Pre-3.80** (`table__mode = 0`): The original classic security
+- **Firmware 3.80** (`table__mode = 1`): Sony saw that hackers were reading shipping labels (SIZE_A), so they started mangling (XOR scrambling like we did before yey!!!) the headers.
+- **Firmware 4.xx** (`table_mode = 2`): Sony changed the scrambling tables and decryption keys again.
+- **Firmware 5.xx and 6.xx** (`table_mdoe = 3, 4, 5`): Sony rotated the keys and added new layers of obfuscation to stop Custom Firmware (5.00 M33 or 6.60 PRO) from being built.
+
+---
+### creating folders in psar decryption
+Sony PSAR file (EBOOT.PBP) is a giant flat-pack that contains brand-new PSP operating system.
+
+If a normal hacker user runs this update, the PSP decrypts the PSAR in memory and overwrites the physical flash memory chips soldered onto the PSP's motherboard.
+
+**Hacker dilemma:** If the hacker runs the officail update, Sony's new code will overwrite their hacked system, patch all the security vulnerabilities and lock them out of their console forever.
+**Hacker solution:** Instead of installing the update into the console, they built this tool to safely "unpack the giant flat-pack" on their computer screen or Memory Stick. So, by creating folders that mimics the original physical chips, they can safely study Sony's new branch code without destroying their own console (well, patch his own console)
+that's when pspPSARGetNextFile() comes: checks if the filename is scrambled, and then drops the decrypted file right into those folders that the program just created.
+
+
+
+
 
 
 

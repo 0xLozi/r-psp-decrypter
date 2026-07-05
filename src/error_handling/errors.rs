@@ -45,7 +45,10 @@ pub enum PspError {
     AlignmentFault,
 
     #[error("File size len() too low...")]
-    TooShort
+    TooShort,
+
+    #[error("Folder creation failed")]
+    FolderCreationFailed
 }
 
 

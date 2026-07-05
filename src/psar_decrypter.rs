@@ -1,10 +1,14 @@
+use std::fs;
+use std::path::Path;
+use std::io;
+
 use crate::{PsarContext, PspError, SIZE_A};
 use crate::prx_types::decrypt_prx;
 use crate::kirk7;
 const DATA_SIZE: usize = 3000000;
 
 
-pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &[u8], ctx: &mut PsarContext) -> Result<(), PspError> {
+pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) -> Result<(), PspError> {
     // kirk_init: but not neccessary
     let magic: [u8; 4] = data_psar[..4]
         .try_into()
@@ -26,6 +30,7 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &[u8], ctx: &mut PsarContext)
     let int_version = get_version(&data_1[0x10..0x14].try_into().unwrap())?;
     println!("{}", int_version);
     
+    // Check PBP_NOTES.md section {### table_modes} In order to understand why we do this
     if int_version >= 380 && int_version < 400 {
         ctx.table_mode = 1;
     } else if int_version >= 400 && int_version < 500 {
@@ -47,6 +52,12 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &[u8], ctx: &mut PsarContext)
     //     println("only info lmao")
     //     return urmom
     // }
+
+    // Then we create the folders (explanation at PBP_notes.md section ### creating folders in psar decryption)
+    // Just in case I map the error so it's compatible to the PspError Result, even though the compiler didn't trigger anything, just in case
+    setup_extraction_folders(out_dir).map_err(|_| PspError::FolderCreationFailed)?;
+
+    
 
 
 
@@ -300,4 +311,20 @@ fn get_version(version_bytes: &[u8;4]) -> Result<u32, PspError> {
 
 
     Ok(int_version)
+}
+
+fn setup_extraction_folders(outdir: &str) -> io::Result<()> {
+    // 1. Create a Path object out of the user's output directory
+    let base_path = Path::new(outdir);
+
+    // 2. create_dir_all acts like `mkdir -p` in Linux
+    fs::create_dir_all(base_path)?;
+
+    fs::create_dir_all(base_path.join("F0"))?;
+    fs::create_dir_all(base_path.join("F1"))?;
+    fs::create_dir_all(base_path.join("PSARDUMPER"))?;
+
+    println!("Safe-room environment folders created successfully!");
+
+    Ok(())
 }

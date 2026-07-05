@@ -13,7 +13,6 @@ mod psar_decrypter;
 
 const SIZE_A: usize = 0x110;
 
-
 pub struct PsarContext {
     decrypted: bool,
     overhead: usize,
@@ -21,7 +20,6 @@ pub struct PsarContext {
     i_base: usize,
     table_mode: u32
 }
-
 
 impl PsarContext {
     pub fn new() -> Self {
@@ -145,9 +143,7 @@ fn main() -> Result<(), PspError>{
 
         // Send it to out Engine
         // let size = psp_decrypt::decrypt_prx(&mut prx_buffer, Some(&externar_seed))?;
-        let mut buffer_result = [0u8; 0x130];
-
-        psar_decrypter::psp_decrypt_psar(psar_data, &mut buffer_result, &mut ctx)?;
+        psar_decrypter::psp_decrypt_psar(psar_data, ".", &mut ctx)?;
         println!("We need to implement the PSAR mathematitian tool, but the route is ready");
     } else {
         eprintln!("File format not supported. Magic: {:?}", magic);
