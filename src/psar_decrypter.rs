@@ -353,8 +353,8 @@ fn setup_extraction_folders(outdir: &str) -> io::Result<()> {
 }
 
 
-fn psp_psar_get_next_file(data_psar: &[u8], data_1: &[u8;3000000], data_2: &[u8;3000000], name: &[u8;128], cb_expanded: &mut u32, pos: &mut u32, sign_check: &mut u32, ctx: &mut PsarContext) -> Result<(), PspError> {
-    let cb_out = 0u32;
+fn psp_psar_get_next_file(data_psar: &[u8], data_out: &mut [u8;3000000], data_out_2: &mut [u8;3000000], name: &mut [u8;128], cb_expanded: &mut u32, pos: &mut u32, sign_check: &mut u32, ctx: &mut PsarContext) -> Result<(), PspError> {
+    let mut cb_out: usize;
 
     // C++ Version:
     // if (iBase >= (cbFile-OVERHEAD)) { return 0; }
@@ -365,6 +365,53 @@ fn psp_psar_get_next_file(data_psar: &[u8], data_1: &[u8;3000000], data_2: &[u8;
         // We reached the end of the file!
         return Ok(()); 
     }
+
+    cb_out = decode_block(
+        &data_psar[ctx.i_base..], 
+        ctx.overhead + SIZE_A,
+        data_out, 
+        ctx
+    )?;
+
+    if cb_out <= 0 {
+        return Err(PspError::DecryptionFailed)
+    }
+
+    // Still don't know why if cb_out != 0x110 then the decryption failed... Now I'm trying to figure it out why
+    // What I discover is: Sony designed the PSAR format so that every single file's shipping is eactly 272 bytes long without exceptions!!!
+    // So if cb_out == 272 then the decoding was a success and we didn't lose any sort-of data
+    if cb_out != SIZE_A {
+        return Err(PspError::DecryptionFailed)
+    }
+
+    // string copy again?? sheeesh...
+    // strcpy(name, (const char*)&dataOut[4]);
+    // u32* pl = (u32*)&dataOut[0x100];
+    // *signcheck = (dataOut[0x10F] == 2);
+    // Something is really weird: when they call pspgetnextfile in the original C code, it sends garbage data, since they only declare the array without any sort of data. Thus it just sends garbage data... But why?????????????/
+    // char name[128]; And then right after that:
+    // int res = pspPSARGetNextFile(dataPSAR, size, data1, data2, name, &cbExpanded, &pos, &signcheck);
+    // ????? WHY???
+    // search through this array and find the exact index of the C-style Stop Sign (0)...
+    let name_size = data_out[4..].iter().position(|&b| b == 0).unwrap_or(0);
+
+    // And then since we know exactly where the text stops, we copy
+    name[..name_size].copy_from_slice(&data_out[4..4 + name_size]);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
