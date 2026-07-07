@@ -70,10 +70,22 @@ If a normal hacker user runs this update, the PSP decrypts the PSAR in memory an
 **Hacker solution:** Instead of installing the update into the console, they built this tool to safely "unpack the giant flat-pack" on their computer screen or Memory Stick. So, by creating folders that mimics the original physical chips, they can safely study Sony's new branch code without destroying their own console (well, patch his own console)
 that's when pspPSARGetNextFile() comes: checks if the filename is scrambled, and then drops the decrypted file right into those folders that the program just created.
 
+---
+### 439 line of code explanation
+`0x78` and `0x9C` is the universal signature for zlib compression.
+In other words:
+- `0x78` Tells the computer that the data is compressed using the Deflate algorithm with a 32KB window
+- `0x9C` Tells the computer that this was compressed by using the default compression level
+So when Sony packed the EBOOT.PBP update, they didn't just encrypt the files, they zipped them first in order to save space!!!
 
+So, if the cb_expanded number is greater than zero, this means that the file we are looking at is compressed.
+- `cb_out = DecodeBlock(...)` what it does is asking KIRK to decrypt that physical chunk of data. And data_out now holds the decrypted payload (but it still zipped!!!)
+- `cb_out > 10`: A valid zlib zip file has headers that tak eup a few bytes, so if the decrypted data is less than 10 bytes long, it's definitely garbage!!!
+- `data_out[0] == 0x78`: What the hacker does here is verifying if the decryption actually worked
+- `gunzip(...)` Takes the zipped data from data_out, unzips it, and dumps it into the second buffer (data_out_2... I think!!!)
+- `if (ret == cb_expanded)` Is a final check that tells if the unzipper output the exact number of bytes the Shipping Label promised, so if that's a yes, then Successss!!!
 
-
-
+So a remainder for mi future-self: In C++, they had a custom gunzip function. But in rust I don't need to write a decompressor from scratch since I'm gonna use a standard crate called flate2 (or miniz_oxide... I'll figure it out later)
 
 
 

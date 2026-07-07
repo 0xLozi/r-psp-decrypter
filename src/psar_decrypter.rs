@@ -73,7 +73,7 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
 
         let mut cb_expanded = 0u32;
         let mut pos = 0u32;
-        let mut sign_check = 0u32;
+        let mut sign_check: bool = false;
 
         // put cb_expanded as mutable, I don't know yet if this decision is right. I'm just making hypothesis
         let res = psp_psar_get_next_file(data_psar, &mut data_1, &mut data_2, &mut name, &mut cb_expanded, &mut pos, &mut sign_check, ctx)?;
@@ -353,7 +353,7 @@ fn setup_extraction_folders(outdir: &str) -> io::Result<()> {
 }
 
 
-fn psp_psar_get_next_file(data_psar: &[u8], data_out: &mut [u8;3000000], data_out_2: &mut [u8;3000000], name: &mut [u8;128], cb_expanded: &mut u32, pos: &mut u32, sign_check: &mut u32, ctx: &mut PsarContext) -> Result<(), PspError> {
+fn psp_psar_get_next_file(data_psar: &[u8], data_out: &mut [u8;3000000], data_out_2: &mut [u8;3000000], name: &mut [u8;128], cb_expanded: &mut u32, pos: &mut u32, sign_check: &mut bool, ctx: &mut PsarContext) -> Result<(), PspError> {
     let mut cb_out: usize;
 
     // C++ Version:
@@ -398,23 +398,50 @@ fn psp_psar_get_next_file(data_psar: &[u8], data_out: &mut [u8;3000000], data_ou
     // And then since we know exactly where the text stops, we copy
     name[..name_size].copy_from_slice(&data_out[4..4 + name_size]);
 
+    // Design decision: use bool instead of int *signcheck
+    *sign_check = data_out[0x10F] == 2;
 
 
+    // rewriting the comments from the original tool
+    // pl[0] is 0
+    // pl[1] is the PSAR chunk size (including OVERHEAD)
+    // pl[2] is true file size (TypeA=272=SIZE_A, TypeB=size then expanded) Ok this is very important, I should write it down
+    // pl[3] is flags or version? Lozi: Wait so they don't know exactly where pl[3] stores? really interesting...
 
+    // u32* pl = (u32*)&dataOut[0x100];
+    // *signcheck = (dataOut[0x10F] == 2);
+    // This is so risky, because it changes the memory stride.. Therefore I might use another way of doing this thing...
 
+    // u32 means 4 * 8, then we gotta convert it that range into u32_from_little_endian bytes!!!
+    // if (pl[0] != 0)
+    // {
+    //     return -1;
+    // }
+    // pl[0] != 0 check
+    let pl_0 = u32::from_le_bytes(data_out[0x100..0x104].try_into().unwrap());
+    if pl_0 != 0 {
+        return Err(PspError::InvalidHeader); 
+    }
 
+    ctx.i_base += ctx.overhead + SIZE_A;
 
+    let cb_data_chunk: u32 = u32::from_le_bytes(data_out[0x104..0x108].try_into().unwrap());
+    let cb_expanded: u32 = u32::from_le_bytes(data_out[0x108..0x108+4].try_into().unwrap());
 
+    if cb_expanded > 0 {
+        cb_out = decode_block(
+            &data_psar[ctx.i_base..], 
+            cb_data_chunk as usize, 
+            data_out, 
+            ctx
+        )?;
 
+        // Explaining why this at PBP_notes.md section (439 line of code explanation)
+        if cb_out > 10 && data_out[0] == 0x78 && data_out[1] == 0x9C {
+            println!("Moneda Billete");
+        }
 
-
-
-
-
-
-
-
-
+    }
 
 
     Ok(())
