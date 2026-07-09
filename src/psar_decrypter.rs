@@ -6,6 +6,7 @@ use crate::{PsarContext, PspError, SIZE_A};
 use crate::prx_types::decrypt_prx;
 use crate::kirk7;
 const DATA_SIZE: usize = 3000000;
+use flate2::bufread::ZlibDecoder;
 
 
 pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) -> Result<(), PspError> {
@@ -439,8 +440,17 @@ fn psp_psar_get_next_file(data_psar: &[u8], data_out: &mut [u8;3000000], data_ou
         // Explaining why this at PBP_notes.md section (439 line of code explanation)
         if cb_out > 10 && data_out[0] == 0x78 && data_out[1] == 0x9C {
             println!("Moneda Billete");
-        }
 
+            // Explanation about ZlibDecoder at PBP_NOTES.md section ZLibDecoder
+            let mut deflater = ZlibDecoder::new(&data_out[..cb_out]);
+
+
+            
+
+
+
+
+        }
     }
 
 

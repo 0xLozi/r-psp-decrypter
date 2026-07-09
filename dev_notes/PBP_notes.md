@@ -88,5 +88,32 @@ So, if the cb_expanded number is greater than zero, this means that the file we 
 So a remainder for mi future-self: In C++, they had a custom gunzip function. But in rust I don't need to write a decompressor from scratch since I'm gonna use a standard crate called flate2 (or miniz_oxide... I'll figure it out later)
 
 
+### Zlib Decoder
+When looking through the flate2 crate, my first thought was to grab DeflateDecoder. Since I knew the PSAR files were compressed using the "Deflate" algorithm because of the header, the naming seemed perfectly logical to me at first!!!. But if I had used it, my program would have crashed almost instantly.
+
+Here is why they're different: 
+
+**DeflateDecoder (Raw Math):** This engine expects raw deflate data. It assumes that byte #0 is the immediate start of the compressed mathematics. It does not understand headers or metadata or some sort.
+
+**ZlibDecoder (The one that I trully need!!!):** This engine expects the deflate data to be wrapped inside a **Zlib Envelope**. This specifically looks for a header at the beginning of the file to tell it **how the data was compressed**, then it strips that header off, and then does the raw math.
+
+In the original C++ code, the hacker wrote a specific check before unzipping:
+```c
+if (dataOut[0] == 0x78 && dataOut[1] == 0x9C)
+```
+Then I learned that these aren't random bytes really; they are the **universal Zlib signature**
+`0x78`: This is compressed with Deflate
+`0x9C`: This was compressed using the Default (Level 6) compression level (which is universal technically because is the best one so far).
+
+### Why I Chose ZlibDecoder
+Because my data_out buffer starts exactly at byte 0, and those 0x78 and 0x9C bytes are still  right at the front of the payload!!
+
+If I put data_out into DeflateDecoder, it will try to do decompression math on the 0x78 byte, then it'll get confused, and throws a fatal error.
+
+By feeding it into **ZlibDecoder**, the engine sees the `0x78 0x9C`, says "Ok, a standard zlib header," and safely strips the envelope away, and therefore unzips the real payload.
+
+**My Conclusion**: Whenever I see 0x78 0x9C, this means is a Zlib file, **NOT raw deflate**. `flate2::bufread::ZlibDecoder` is the exact tool for the job.
+
+
 
 
