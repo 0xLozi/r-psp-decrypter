@@ -88,12 +88,20 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
             ctx
         )?;
 
+        // This'll mimic if res < 0
+        if res == false {
+            println!("There are no more files OR Error whhen decrypting PSAR Block!!!");
+            break;
+        }
+
+        // to-do: Create this damm function
+        if is_5_d_num(name) {
+            // we do something
+            println!("We are bailling");
+        }
 
 
 
-
-
-        break
     }
 
     Ok(())
@@ -470,4 +478,19 @@ fn psp_psar_get_next_file(data_psar: &[u8], data_out: &mut [u8;3000000], data_ou
     *pos = ctx.i_base as u32;
 
     Ok(true) // if it returns true, it means that there are more files!!!
+}
+
+
+// I don't think is neccessary to return a PspError, but let's see what this function does inside the original C/C++ tool
+fn is_5_d_num(name: &[u8;128]) -> Result<bool, PspError> {
+    //to-do: complete this function
+    // Thjis is wrong, since I'm not comparing valid bytes and null ones
+    // if name.len() != 5 {
+    //     return Ok(false);
+    // }
+
+
+    /// to-do
+
+    Ok(true)
 }
