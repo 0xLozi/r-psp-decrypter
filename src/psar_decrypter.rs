@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::Path;
-use std::io;
+use std::io::{self, Read};
 
 use crate::{PsarContext, PspError, SIZE_A};
 use crate::prx_types::decrypt_prx;
@@ -72,12 +72,21 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
         // Therefore, we use `[u8; 128]` to faithfully represent the original C buffer.
         let mut name = [0u8; 128];
 
-        let mut cb_expanded = 0u32;
+        let mut cb_expanded: usize = 0;
         let mut pos = 0u32;
         let mut sign_check: bool = false;
 
         // put cb_expanded as mutable, I don't know yet if this decision is right. I'm just making hypothesis
-        let res = psp_psar_get_next_file(data_psar, &mut data_1, &mut data_2, &mut name, &mut cb_expanded, &mut pos, &mut sign_check, ctx)?;
+        let res = psp_psar_get_next_file(
+            data_psar, 
+            &mut data_1,
+            &mut data_2, 
+            &mut name, 
+            &mut cb_expanded, 
+            &mut pos, 
+            &mut sign_check,
+            ctx
+        )?;
 
 
 
@@ -354,7 +363,7 @@ fn setup_extraction_folders(outdir: &str) -> io::Result<()> {
 }
 
 
-fn psp_psar_get_next_file(data_psar: &[u8], data_out: &mut [u8;3000000], data_out_2: &mut [u8;3000000], name: &mut [u8;128], cb_expanded: &mut u32, pos: &mut u32, sign_check: &mut bool, ctx: &mut PsarContext) -> Result<(), PspError> {
+fn psp_psar_get_next_file(data_psar: &[u8], data_out: &mut [u8;3000000], data_out_2: &mut [u8;3000000], name: &mut [u8;128], ret_size: &mut usize, pos: &mut u32, sign_check: &mut bool, ctx: &mut PsarContext) -> Result<bool, PspError> {
     let mut cb_out: usize;
 
     // C++ Version:
@@ -363,8 +372,8 @@ fn psp_psar_get_next_file(data_psar: &[u8], data_out: &mut [u8;3000000], data_ou
     // Rust Version:
     // data_psar.len() IS the cbFile (the total size of the PSAR)
     if ctx.i_base >= (data_psar.len() - ctx.overhead) {
-        // We reached the end of the file!
-        return Ok(()); 
+        // We reached the end of the file, so we return false
+        return Ok(false); 
     }
 
     cb_out = decode_block(
@@ -427,7 +436,7 @@ fn psp_psar_get_next_file(data_psar: &[u8], data_out: &mut [u8;3000000], data_ou
     ctx.i_base += ctx.overhead + SIZE_A;
 
     let cb_data_chunk: u32 = u32::from_le_bytes(data_out[0x104..0x108].try_into().unwrap());
-    let cb_expanded: u32 = u32::from_le_bytes(data_out[0x108..0x108+4].try_into().unwrap());
+    let mut cb_expanded: u32 = u32::from_le_bytes(data_out[0x108..0x108+4].try_into().unwrap());
 
     if cb_expanded > 0 {
         cb_out = decode_block(
@@ -440,19 +449,25 @@ fn psp_psar_get_next_file(data_psar: &[u8], data_out: &mut [u8;3000000], data_ou
         // Explaining why this at PBP_notes.md section (439 line of code explanation)
         if cb_out > 10 && data_out[0] == 0x78 && data_out[1] == 0x9C {
             println!("Moneda Billete");
-
             // Explanation about ZlibDecoder at PBP_NOTES.md section ZLibDecoder
-            let mut deflater = ZlibDecoder::new(&data_out[..cb_out]);
-
-
-            
-
-
-
-
+            let mut decoder = ZlibDecoder::new(&data_out[..cb_out]);
+            // read_exact keeps calling read() internally until it has filled exactly cb_expanded bytes OR returns an error
+            decoder.read_exact(&mut data_out_2[..cb_expanded as usize])?;
+            *ret_size = cb_expanded as usize;
+        } else {
+            ctx.i_base -= ctx.overhead + SIZE_A;
+            // Up to this point I think I have to make a refactoring of error headers... I'm using this one too many and it can lead to missunderstanding
+            return Err(PspError::DecryptionFailed);
         }
+    } else if cb_expanded == 0 {
+        *ret_size = 0;
+    }
+    else {
+        return Err(PspError::DecryptionFailed);
     }
 
+    ctx.i_base += cb_data_chunk as usize;
+    *pos = ctx.i_base as u32;
 
-    Ok(())
+    Ok(true) // if it returns true, it means that there are more files!!!
 }
