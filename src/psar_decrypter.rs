@@ -94,8 +94,7 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
             break;
         }
 
-        // to-do: Create this damm function
-        if is_5_d_num(name) {
+        if is_5_d_num(&name) {
             // we do something
             println!("We are bailling");
         }
@@ -481,16 +480,19 @@ fn psp_psar_get_next_file(data_psar: &[u8], data_out: &mut [u8;3000000], data_ou
 }
 
 
-// I don't think is neccessary to return a PspError, but let's see what this function does inside the original C/C++ tool
-fn is_5_d_num(name: &[u8;128]) -> Result<bool, PspError> {
-    //to-do: complete this function
-    // Thjis is wrong, since I'm not comparing valid bytes and null ones
-    // if name.len() != 5 {
-    //     return Ok(false);
-    // }
+// I don't think is neccessary to return a PspError
+fn is_5_d_num(name: &[u8; 128]) -> bool {
+    let real_len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
 
+    if real_len != 5 {
+        return false;
+    }
 
-    /// to-do
+    for character in &name[..real_len] {
+        if *character < b'0' || *character > b'9' {
+            return false;
+        }
+    }
 
-    Ok(true)
+    true
 }
