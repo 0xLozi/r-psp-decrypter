@@ -48,7 +48,10 @@ pub enum PspError {
     TooShort,
 
     #[error("Folder creation failed")]
-    FolderCreationFailed
+    FolderCreationFailed,
+
+    #[error("There's a parsing error...")]
+    ParsingError
 }
 
 

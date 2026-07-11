@@ -7,6 +7,7 @@ use crate::prx_types::decrypt_prx;
 use crate::kirk7;
 const DATA_SIZE: usize = 3000000;
 use flate2::bufread::ZlibDecoder;
+use atoi::atoi;
 
 
 pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) -> Result<(), PspError> {
@@ -95,11 +96,16 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
         }
 
         if is_5_d_num(&name) {
-            // we do something
-            println!("We are bailling");
+
+            let name_as_int = atoi::<u32>(&name)
+            .ok_or(PspError::ParsingError)?;
+            
+            if name_as_int >= 100 || (name_as_int >= 10 && int_version < 660) {
+                let found: u32 = 0;
+
+
+            }
         }
-
-
 
     }
 

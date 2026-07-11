@@ -1,4 +1,5 @@
-### PSARDecrypter.cpp
+# PSARDecrypter.cpp
+## is_5_d_num()
 Code:
 ```cpp
 static int is5Dnum(char *str)
@@ -43,3 +44,126 @@ and `str[i] > '9'` -> becomes -> `str[i] > 57`
 **If the value is**
 Less than `48` → not a digit
 Greater than `57` → not a digit
+
+
+
+## Lines 519-544 switch statement before is_5_d_num()
+Code:
+```cpp
+if (is5Dnum(name))
+{
+    if (atoi(name) >= 100 || (atoi(name) >= 10 && intVersion < 660))
+    {
+        int found = 0;
+        for (const auto &table : g_tables) {
+            if (table.size() > 0) {
+                found = FindTablePath(table.data(), table.size(), name, name);
+                if (found) {
+                    break;
+                }
+            }
+        }
+
+        if (!found)
+        {
+            printf("Part 1 Error: cannot find path of %s.\n", name);
+            continue;
+        }
+    }
+}
+```
+### Hypothesis
+Ok first, inside we have a switch statmente which'll depend on if it's true or false. Then whe enter into another switch statement which is **larger** than the other one:
+`if (atoi(name) >= 100 || (atoi(name) >= 10 && intVersion < 660))`
+This tells us lots of things:
+- If `atoi(name) >= 100` (I don't know that that means yet)
+- if `atoi(name) >= 100` (I don't know)
+- AND `intVersion < 660` (This one I know it since I had to parse the slice in order to get the desired int version thing)
+
+Now that we know what we lack, let's investigate about atoi() thing, which I dont know:
+Is it inside the file or is it a custom function? -> NO
+Is it a dependency? -> Probably YES
+By doing a short research, I found the meaning of `atoi()`:
+
+Term:
+- `atoi()` in C++ stands for "ASCII to integer" and converts a numeric string into an integer value, stopping at the first non-digit character.
+That's nice, so technically what it does is convert a numeric string (which makes sense since a char is technically a number but in ascii) Into an integer value, and it stops at the non-digit character (which might be null byte, since we only have digits inside the name)
+
+### Solution
+First -> `cargo add atoi`
+
+### Second Hypothesis
+I see something that is really weird here:
+```cpp
+int found = 0;
+for (const auto &table : g_tables) {
+    if (table.size() > 0) {
+        found = FindTablePath(table.data(), table.size(), name, name);
+        if (found) {
+            break;
+        }
+    }
+}
+
+if (!found)
+{
+    printf("Part 1 Error: cannot find path of %s.\n", name);
+    continue;
+}
+```
+**Questions:**
+1. What the hell is g_tables?
+2. What is FindTablePath
+3. Where does g_table comes from?
+
+Then, let's research about g_tables inside the original code:
+```cpp
+// File tables, com = offset 0, then 01g = offset 1, etc.
+std::array<std::vector<char>, 13> g_tables;
+```
+This is the first appearance inside `PsarDecrypter.cpp`!!!
+So this is an array of arrays of character which it's size is 13? mmm this is kinda confusing.
+Because it is declared as a global variable at the top of the file, it isn't initialized with any secret data whatsoever. So when the program starts, it's literally just 13 empty arrays (size 0)...
+
+And below that, we have this:
+```cpp
+const std::vector<std::pair<std::string, int>> g_tableFilenames = {
+    {"com:00000", 0},
+    {"01g:00000", 1},
+    {"02g:00000", 2},
+    {"00001", 1},
+    {"00002", 2},
+    {"00003", 3},
+    {"00004", 4},
+    {"00005", 5},
+    {"00006", 6},
+    {"00007", 7},
+    {"00008", 8},
+    {"00009", 9},
+    {"00011", 11},
+    {"00012", 12}
+};
+```
+What a coincidence, it's size is 13...
+The second appearance inside the code is the iterator that we already saw:
+```cpp
+    for (const auto &table : g_tables) {
+        if (table.size() > 0) {
+            found = FindTablePath(table.data(), table.size(), name, name);
+            if (found) {
+                break;
+            }
+        }
+    }
+```
+So... Where the hell does `g_tables` get filled?
+It seems that it gets filled dynamically while the main extraction loop is running...
+There's something that I'm missing: a go-between function, so this is the loop process:
+1. Extract -> Calls `pspPSARGetNextFile` and gets the decrypted, unzipped data and it's name
+3. The "go-between" function: what's the name on the g_tableFilenames's list? THAT'S WHERE I HAVE TO FIND OUT WHERE IT DOES THAT
+
+
+
+
+
+
