@@ -8,6 +8,10 @@ use crate::kirk7;
 const DATA_SIZE: usize = 3000000;
 use flate2::bufread::ZlibDecoder;
 use atoi::atoi;
+use std::sync::Mutex;
+
+// std::array<std::vector<char>, 13> g_tables;
+static G_TABLES: Mutex<[Vec<u8>; 13]> = Mutex::new([const { Vec::new() }; 13]);
 
 
 pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) -> Result<(), PspError> {
@@ -89,6 +93,15 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
             ctx
         )?;
 
+        // DEBUG THINGS (AFTER FINISHING VERIFICATION, DELETE THIS)
+        // Here is safe the usage of unwrap();
+        let name_size = name.iter().position(|&b| b == 0).unwrap_or(name.len());
+
+        let debug_name = std::str::from_utf8(&name[..name_size]).unwrap_or("UNKNOWN");
+        println!("Extracted chunk: {}", debug_name);
+        // DEBUG THINGS (AFTER FINISHING VERIFICATION, DELETE THIS)
+
+
         // This'll mimic if res < 0
         if res == false {
             println!("There are no more files OR Error whhen decrypting PSAR Block!!!");
@@ -96,12 +109,15 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
         }
 
         if is_5_d_num(&name) {
-
             let name_as_int = atoi::<u32>(&name)
             .ok_or(PspError::ParsingError)?;
             
             if name_as_int >= 100 || (name_as_int >= 10 && int_version < 660) {
                 let found: u32 = 0;
+
+                for &table in g_tables {
+
+                }
 
 
             }
@@ -502,3 +518,5 @@ fn is_5_d_num(name: &[u8; 128]) -> bool {
 
     true
 }
+
+

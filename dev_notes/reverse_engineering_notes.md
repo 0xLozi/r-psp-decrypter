@@ -160,7 +160,19 @@ So... Where the hell does `g_tables` get filled?
 It seems that it gets filled dynamically while the main extraction loop is running...
 There's something that I'm missing: a go-between function, so this is the loop process:
 1. Extract -> Calls `pspPSARGetNextFile` and gets the decrypted, unzipped data and it's name
-3. The "go-between" function: what's the name on the g_tableFilenames's list? THAT'S WHERE I HAVE TO FIND OUT WHERE IT DOES THAT
+3. The "go-between" function: what's the name on the g_tableFilenames's list? THAT'S WHERE I HAVE TO FIND OUT WHERE IT DOES THAT.
+#### While reading the entire code, I found the solution:
+The entire PSAR extraction process relies on a desing choice by Sony: the physical order of the files inside the archive is important!!!. But why?
+Sony stacked the archive sequentially like if it was the pages of a book: The damm "Table of Contents" are places at the very beginning of the archive, and the "Chapters" are placed later. This ensures the program dynamically builds its routing system BEFORE it actually really need to use the Table itself!!!!.
+
+`while(1) timeline`
+The main loop extracts chunks one by one from the archive. So depending on what type of file comes down the pipeline, the loop processes like this:
+1. Building the Map (Table of Contents)
+- When the loop extracts early chunks, it encounters names like com:000 or 0001.
+- These are MAP FILES. They bypass the first is_5_d_num() that I translated before because they contain letters or fail the firmware version conditions!!!.
+- So the code reaches an else block where it checks the name against g_table_filenames list!!!
+- And then it finds a match, it decrypts the map file and directly copies the unzipped bytes into the corresponding g_tables array in RAM
+So the go-between function needed was already the one that's inside the `else {}` thing...
 
 
 
