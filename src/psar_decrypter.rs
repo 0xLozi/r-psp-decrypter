@@ -115,16 +115,17 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
 
         if is_5_d_num(&name) {
             let name_as_int = atoi::<u32>(&name)
-            .ok_or(PspError::ParsingError)?;
+            .unwrap_or(0);
             
             if name_as_int >= 100 || (name_as_int >= 10 && int_version < 660) {
-                let found: bool;
+                let found: bool = false;
 
                 let mut g_tables = G_TABLES.lock().unwrap();
 
                 for table in &mut *g_tables {
                     if table.len() > 0 {
-                        let found = find_table_path(table.data(), table.len(), name, name);
+                        // just in case, I have to remember that this has to return a bool. A BOOL, not a psperror that later i had to raise and would crash the entire program.
+                        found = find_table_path(table.data(), table.len(), name, name);
                         if found {
                             break;
                         }
