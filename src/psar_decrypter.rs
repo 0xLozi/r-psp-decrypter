@@ -10,6 +10,11 @@ use flate2::bufread::ZlibDecoder;
 use atoi::atoi;
 use std::sync::Mutex;
 
+
+// This is for c-style byte representation
+// What it does the crate-page is this: A dynamically-sized view of a C string.
+use std::ffi::CStr;
+
 // std::array<std::vector<char>, 13> g_tables;
 static G_TABLES: Mutex<[Vec<u8>; 13]> = Mutex::new([const { Vec::new() }; 13]);
 
@@ -113,13 +118,26 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
             .ok_or(PspError::ParsingError)?;
             
             if name_as_int >= 100 || (name_as_int >= 10 && int_version < 660) {
-                let found: u32 = 0;
+                let found: bool;
 
-                for &table in g_tables {
+                let mut g_tables = G_TABLES.lock().unwrap();
 
+                for table in &mut *g_tables {
+                    if table.len() > 0 {
+                        let found = find_table_path(table.data(), table.len(), name, name);
+                        if found {
+                            break;
+                        }
+                    }
                 }
 
+                if !found {
+                    let cstr = CStr::from_bytes_until_nul(&name)
+                    .map_err(|_| PspError::StringRepresentation)?;
 
+                    println!("Part 1 Error: can't find path of {}", cstr.to_string_lossy());
+                    continue;
+                }
             }
         }
 

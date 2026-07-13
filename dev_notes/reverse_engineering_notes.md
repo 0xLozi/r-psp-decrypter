@@ -174,6 +174,110 @@ The main loop extracts chunks one by one from the archive. So depending on what 
 - And then it finds a match, it decrypts the map file and directly copies the unzipped bytes into the corresponding g_tables array in RAM
 So the go-between function needed was already the one that's inside the `else {}` thing...
 
+So know the translation is so much easy since yesterday
+```cpp
+int found = 0;
+for (const auto &table : g_tables) {
+    if (table.size() > 0) {
+        found = FindTablePath(table.data(), table.size(), name, name);
+        if (found) {
+            break;
+        }
+    }
+}
+```
+So since first it checks if the table.len() is higher than 0, then it first checks wheter is empty or no, so we don't have to be skeptical that it'll send into FindTablePath an empty `Vec<u8>`.
+
+**Translation:**
+```rust
+for table in &mut *g_tables {
+    if table.len() > 0 {
+        let found = find_table_path(table.data(), table.len(), name, name);
+        if found {
+            break;
+        }
+    }
+}
+```
+But I don't understand the last 2 parameters that I'm sending: Why do we send the same variable? Let's reverse_engineer the function itself:
+
+## FindTablePath function Reverse Engineering
+Ok... This function is somewhat big:
+```cpp
+static int FindTablePath(const char *table, int table_size, char *number, char *szOut)
+{
+    int i, j, k;
+
+    for (i = 0; i < table_size-5; i++)
+    {
+        if (strncmp(number, table+i, 5) == 0)
+        {
+            for (j = 0, k = 0; ; j++, k++)
+            {
+                if (table[i+j+6] < 0x20)
+                {
+                    szOut[k] = 0;
+                    break;
+                }
+
+                if (table[i+5] == '|' && !strncmp(table+i+6, "flash", 5) &&
+                    j == 6)
+                {
+                    szOut[6] = ':';
+                    szOut[7] = '/';
+                    k++;
+                }
+                else if (table[i+5] == '|' && !strncmp(table+i+6, "ipl", 3) &&
+                    j == 3)
+                {
+                    szOut[3] = ':';
+                    szOut[4] = '/';
+                    k++;
+                }
+                else
+                {
+                    szOut[k] = table[i+j+6];
+                }
+            }
+
+            return 1;
+        }
+    }
+
+    return 0;
+}
+```
+Let's analyze first their parameters:
+`static int FindTablePath(const char *table, int table_size, char *number, char *szOut)`
+What I see here is that we are sending:
+- A const char pointer called "table"
+- An integer which might be the table_size of the table above
+- A pointer of chars called number
+
+- A pointer of chars called szOut (Which I think it's the abbreviation of sizeOut, but of what? And why it creates 2 references at the same memory address? This is highly dangerous and It'll make me fight with the rust compiler non-stop...)
+- NO, GOT THIS ABOVE WRONG: Since this is actually ancient C++ naming convention called Hungarian Notation:
+    - sz stands for String-Zero-Terminated I think (which is a standard C-String endingin a null byte `\0`)
+    - Out means it's a buffer intended to be written to and returned to the caller.
+
+Then inside the function what it does is iterate between each collum (because it's a matrix); First they do the first iterator (int i = 0) up to the desired lenght that the Vec inside has.But i think it doesn't make any sense, because the first array is a fixed-size, but the other one isn't, so why sending the table size?...
+Something is weird, because the iterator goes from 0 up to the table size -5.. What?
+I Think what the programmer did was do the in-place overwrite, which is highly efficient for the 32mb ram of the psp but highly risky...
+
+1. The function reads for example "00010" from the number pointer
+2. Then it finds the real path (e.g., "bsjh/modulue_urmom.prx).
+3. Then immediately writes the new path directly over the "00010" string in the exact same memory array by using the szOut pointer.
+
+### Just to clarify
+table is not matrix, is a giant 1D array OF BYTES. It's literally just raw text contents of the map file dumped into the memory. So my bad there...
+The problem is that, when I open that map file in NOTEDPAD, the rae text inside "table" is something like this:
+```txt
+00010|flash0/kd/loadexec.prx[0x0A]00011|vsh/module/vshmain.prx[0x0A]
+```
+Something like that...  But I wanna see it with my own eyes if that's true. So let's dive in
+
+
+
+
 
 
 

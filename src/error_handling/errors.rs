@@ -51,7 +51,10 @@ pub enum PspError {
     FolderCreationFailed,
 
     #[error("There's a parsing error...")]
-    ParsingError
+    ParsingError,
+
+    #[error("String representation c-like failed")]
+    StringRepresentation
 }
 
 
