@@ -273,7 +273,9 @@ The problem is that, when I open that map file in NOTEDPAD, the rae text inside 
 ```txt
 00010|flash0/kd/loadexec.prx[0x0A]00011|vsh/module/vshmain.prx[0x0A]
 ```
-Something like that...  But I wanna see it with my own eyes if that's true. So let's dive in
+
+I'm just gonna trust the original code for now, and once I finished with it, I might debugg it and see if their hyptothesis are true. Because now I don't have a hacked PSP at my disposal in order to make the dump into ram thing..
+
 
 
 
