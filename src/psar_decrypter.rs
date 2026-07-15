@@ -118,14 +118,16 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
             .unwrap_or(0);
             
             if name_as_int >= 100 || (name_as_int >= 10 && int_version < 660) {
-                let found: bool = false;
+                let mut found: bool = false;
 
                 let mut g_tables = G_TABLES.lock().unwrap();
 
                 for table in &mut *g_tables {
                     if table.len() > 0 {
                         // just in case, I have to remember that this has to return a bool. A BOOL, not a psperror that later i had to raise and would crash the entire program.
-                        found = find_table_path(table.data(), table.len(), name, name);
+                        let mut result_name: [u8;128] = [0u8;128];
+                        found = find_table_path(table, table.len(), &name, &mut result_name);
+                        name = result_name;
                         if found {
                             break;
                         }
@@ -538,4 +540,58 @@ fn is_5_d_num(name: &[u8; 128]) -> bool {
     true
 }
 
+// found = find_table_path(table, table.len(), name, result_name);
+fn find_table_path(
+    table: &[u8],
+    len: usize,
+    name: &[u8; 128],
+    result_name: &mut [u8; 128],
+) -> bool {
 
+    if table.len() >= 5 {
+        for i in 0..(table.len() - 5) {
+            if name[..5] == table[i..i+5] {
+                // declaring my iterators outside the loop
+                let mut j = 0;
+                let mut k = 0;
+                
+                // This loop I think I've made the translation perfectly. But I'm somewhat skeptical about that statement. So maybe this is subject of changes in the future when I start doing the tests.
+                loop {
+                    // SAFETY FIRST: Stop if we somehow reach the end of the table or result array early
+                    if i + j + 6 >= table.len() || k >= result_name.len() {
+                        break;
+                    }
+
+                    if table[i+j+6] < 0x20 {
+                        result_name[k] = 0;
+                        break;
+                    }
+
+                    if table[i + 5] == b'|' 
+                        && &table[i+6..i+11] == b"flash" 
+                        && j == 6 
+                    {
+                        result_name[6] = b':';
+                        result_name[7] = b'/';
+                        k += 1;
+                    }
+                    else if table[i+5] == b'|' 
+                        && &table[i+6..i+9] == b"ipl"
+                        && j == 3 
+                    {
+                        result_name[3] = b':';
+                        result_name[4] = b'/';
+                        k += 1;
+                    }
+                    else {
+                        result_name[k] = table[i+j+6];
+                    }
+                    j += 1;
+                    k += 1;
+                }
+                return true;
+            }
+        }
+    }
+    false
+}

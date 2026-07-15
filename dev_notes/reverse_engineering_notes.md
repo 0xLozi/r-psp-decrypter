@@ -277,7 +277,26 @@ The problem is that, when I open that map file in NOTEDPAD, the rae text inside 
 I'm just gonna trust the original code for now, and once I finished with it, I might debugg it and see if their hyptothesis are true. Because now I don't have a hacked PSP at my disposal in order to make the dump into ram thing..
 
 
+### Analysing FindTablePath
+1. Declares i, j, k as int
 
+2. First for-loop | Ranges -> i = 0; i M table_size-5; i++
+Why this: While doing the research, found something interesting:
+    - It's a safe mechanism in order to prevent buffer overflow
+Why is that? Let's look below:
+
+`if (strncmp(number, table+i, 5) == 0)`
+
+The function `strncmp` what it does is that it takes like a "magnifying glass" of 5 bytes wide, then it places at index `i`, and reads 5 characters to see if they match out 5 digit number (like for example `00010`).
+
+Now let's make this hypothesis: imagine the table is 100 bytes long, right?
+The loop goes into that 5 bytes magnifying glass through the array one step at a time: `i = 0`, `i = 1`, `i = 2`...
+
+Then what happens when the loop reaches **i = 98**?
+- The **magnifying glass** will try to read 5 bytes starting from 98... it'll fall of the edge of the array -> Segmentation fault!!!
+
+By writing `i < table_size - 5` the programmer is making sure the **Segmentation Fault** behavior doesn't happen.
+Why writing in Rust `for  i in 0..table.len()` it perfectly mimics the C++ behavior. But we must be carefull, since if `table.len()` happens to be less than 5, it will cause an integer underflow, resulting into panic with Rust's side.
 
 
 
