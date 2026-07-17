@@ -74,6 +74,7 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
         let mut cb_expanded: usize = 0;
         let mut pos = 0u32;
         let mut sign_check: bool = false;
+        let mut result_name: [u8;128] = [0u8;128];
 
         // put cb_expanded as mutable, I don't know yet if this decision is right. I'm just making hypothesis
         let res = psp_psar_get_next_file(
@@ -111,8 +112,6 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
 
                 for table in &mut ctx.g_tables {
                     if table.len() > 0 {
-                        // just in case, I have to remember that this has to return a bool. A BOOL, not a psperror that later i had to raise and would crash the entire program.
-                        let mut result_name: [u8;128] = [0u8;128];
                         found = find_table_path(table, table.len(), &name, &mut result_name);
                         name = result_name;
                         if found {
@@ -130,12 +129,19 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
                 }
             }
         }
-        // else if (!strncmp(name, "com:", 4) && g_tables[0].size() > 0)
         else if &name[..4] == b"com:" && ctx.g_tables[0].len() > 0 {
-            // to-do
-            continue;
-        }
+            // if (!FindTablePath(g_tables[0].data(), g_tables[0].size(), name+4, name))
+            let mut result_name: [u8;128] = [0u8;128];
 
+            if !(find_table_path(&ctx.g_tables[0], ctx.g_tables[0].len(), &name[4..], &mut result_name)) {
+                let c_str = CStr::from_bytes_until_nul(&result_name).unwrap();
+                println!("Part 2 Error: cannot find path of {}", c_str.to_str().unwrap());
+                continue; // lmao
+            }
+        }
+        else if !(find_table_path()) {
+
+        }
         //... not finished yet...
     }
 
@@ -537,8 +543,8 @@ fn is_5_d_num(name: &[u8; 128]) -> bool {
 fn find_table_path(
     table: &[u8],
     len: usize,
-    name: &[u8; 128],
-    result_name: &mut [u8; 128],
+    name: &[u8],
+    result_name: &mut [u8],
 ) -> bool {
 
     if table.len() >= 5 {
