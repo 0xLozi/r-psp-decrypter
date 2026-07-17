@@ -8,16 +8,14 @@ use crate::kirk7;
 const DATA_SIZE: usize = 3000000;
 use flate2::bufread::ZlibDecoder;
 use atoi::atoi;
-use std::sync::Mutex;
-
+// use std::sync::Mutex;
 
 // This is for c-style byte representation
 // What it does the crate-page is this: A dynamically-sized view of a C string.
 use std::ffi::CStr;
 
 // std::array<std::vector<char>, 13> g_tables;
-static G_TABLES: Mutex<[Vec<u8>; 13]> = Mutex::new([const { Vec::new() }; 13]);
-
+// static G_TABLES: Mutex<[Vec<u8>; 13]> = Mutex::new([const { Vec::new() }; 13]);
 
 pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) -> Result<(), PspError> {
     // kirk_init: but not neccessary
@@ -68,18 +66,9 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
     // Just in case I map the error so it's compatible to the PspError Result, even though the compiler didn't trigger anything, just in case
     setup_extraction_folders(out_dir).map_err(|_| PspError::FolderCreationFailed)?;
 
-    // I'm not decided wheter use a "loop" or a "while-loop". I still don't know which one's better, so Imma just leave it like there
+    // I'm not decided wether use a "loop" or a "while-loop". I still don't know which one's better, so Imma just leave it like there
     loop {
         let mut log_str: String = String::new();
-        // NOTE:
-        // The original C/C++ code uses `char name[128]`, where `char` is a **1-byte**
-        // type used to store raw bytes (often a null-terminated C string).
-        //
-        // Rust's `char` is *not* equivalent... it represents a Unicode scalar value and
-        // occupies 4 bytes. Using `[char; 128]` would allocate 512 bytes instead of
-        // the expected 128 and would not match the original memory layout.
-        //
-        // Therefore, we use `[u8; 128]` to faithfully represent the original C buffer.
         let mut name = [0u8; 128];
 
         let mut cb_expanded: usize = 0;
@@ -120,9 +109,7 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
             if name_as_int >= 100 || (name_as_int >= 10 && int_version < 660) {
                 let mut found: bool = false;
 
-                let mut g_tables = G_TABLES.lock().unwrap();
-
-                for table in &mut *g_tables {
+                for table in &mut ctx.g_tables {
                     if table.len() > 0 {
                         // just in case, I have to remember that this has to return a bool. A BOOL, not a psperror that later i had to raise and would crash the entire program.
                         let mut result_name: [u8;128] = [0u8;128];
@@ -143,7 +130,13 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
                 }
             }
         }
+        // else if (!strncmp(name, "com:", 4) && g_tables[0].size() > 0)
+        else if &name[..4] == b"com:" && ctx.g_tables[0].len() > 0 {
+            // to-do
+            continue;
+        }
 
+        //... not finished yet...
     }
 
     Ok(())

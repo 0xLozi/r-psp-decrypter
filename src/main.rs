@@ -18,7 +18,8 @@ pub struct PsarContext {
     overhead: usize,
     psar_version: u8,
     i_base: usize,
-    table_mode: u32
+    table_mode: u32,
+    g_tables: [Vec<u8>; 13]
 }
 
 impl PsarContext {
@@ -28,7 +29,8 @@ impl PsarContext {
             overhead: 0,
             psar_version: 1,
             i_base: 0, // I think it's ok like that
-            table_mode: 0
+            table_mode: 0,
+            g_tables: std::array::from_fn(|_| Vec::new()),
         }
     }
 }

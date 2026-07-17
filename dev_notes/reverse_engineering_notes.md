@@ -269,7 +269,7 @@ I Think what the programmer did was do the in-place overwrite, which is highly e
 
 ### Just to clarify
 table is not matrix, is a giant 1D array OF BYTES. It's literally just raw text contents of the map file dumped into the memory. So my bad there...
-The problem is that, when I open that map file in NOTEDPAD, the rae text inside "table" is something like this:
+The problem is that, when I open that map file in NOTEDPAD, the raw text inside "table" is something like this:
 ```txt
 00010|flash0/kd/loadexec.prx[0x0A]00011|vsh/module/vshmain.prx[0x0A]
 ```
