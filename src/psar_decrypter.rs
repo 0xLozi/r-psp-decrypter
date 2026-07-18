@@ -15,7 +15,27 @@ use atoi::atoi;
 use std::ffi::CStr;
 
 // std::array<std::vector<char>, 13> g_tables;
+// THIS IS WRONG, BELOW
 // static G_TABLES: Mutex<[Vec<u8>; 13]> = Mutex::new([const { Vec::new() }; 13]);
+// I don't really need it in single-threader nor multi-threaded
+
+
+static G_TABLE_FILENAMES: &[(&str, u8)] = &[
+    ("com:00000", 0),
+    ("01g:00000", 1),
+    ("02g:00000", 2),
+    ("00001", 1),
+    ("00002", 2),
+    ("00003", 3),
+    ("00004", 4),
+    ("00005", 5),
+    ("00006", 6),
+    ("00007", 7),
+    ("00008", 8),
+    ("00009", 9),
+    ("00011", 11),
+    ("00012", 12),
+];
 
 pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) -> Result<(), PspError> {
     // kirk_init: but not neccessary
@@ -139,10 +159,74 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
                 continue; // lmao
             }
         }
-        else if !(find_table_path()) {
+        // I got really stuck at this: Should I do this with result_name or not? since in the original decryption tool it does an in-place overwrite. I don't have to explain why this is highly dangerous. So I'm just skeptical about this for now
+        else if &name[..4] == b"01g:" && ctx.g_tables[1].len() > 0 {
+            if !(find_table_path(&ctx.g_tables[1], ctx.g_tables[1].len(), &name[4..], &mut result_name)) {
+                let c_str = CStr::from_bytes_until_nul(&result_name).unwrap();
+                println!("Error: 01g cannot find path of {}", c_str.to_str().unwrap());
+                continue; // lmao
+            }
+        }
+        else if &name[..4] == b"02g:" && ctx.g_tables[2].len() > 0 {
+            if !(find_table_path(&ctx.g_tables[2], ctx.g_tables[2].len(), &name[4..], &mut result_name)) {
+                let c_str = CStr::from_bytes_until_nul(&result_name).unwrap();
+                println!("Error: 02g cannot find path of {}", c_str.to_str().unwrap());
+                continue; // lmao
+            }
+        }
+
+        let c_str = CStr::from_bytes_until_nul(&result_name).unwrap();
+        let log_string = "'{c_str}'";
+
+        // const char* szFileBase = strrchr(name, '/'); -> This means chr = character, r = reverse, str = string => string reverse character search -> in order to mimic this we have to iter but backwards
+        // This could be Some(result) or None...
+        // let slash = name.iter().rposition(|&b| b == b'/');
+
+        // if let Some(index) = slash {
+        //     sz_file_base += 1;
+
+        // }
+        // Ok my decisiton is this one: I'm gonna store the slice 
+        let sz_file_name = if let Some(index) = name.iter().rposition(|&b| b == b'/') {
+            &name[index+1..];
+        } else {
+            b"err.err";
+        };
+
+        let mut sz_data_path = String::new();
+        let mut found = 0;
+
+        // Moved out of the switch statement since it was repeated
+        let end = name.iter().position(|&b| b == 0).unwrap();
+        let suffix = std::str::from_utf8(&name[8..end]).unwrap();
+
+        if &name[..8] == b"flash0:/" {
+            // sz_data_path = out_dir + b"/F0/" + (name+8);
+            // to_owned since out_dir is &str
+            sz_data_path = out_dir.to_owned() + "/F0/" + suffix;
+            found = 1;
+            std::fs::create_dir_all(&sz_data_path)?;
+        } else if &name[..8] == b"flash0:/" {
+            sz_data_path = out_dir.to_owned() + "/F1/" + suffix;
+            found = 1;
+            std::fs::create_dir_all(&sz_data_path)?;
+        } else {
+            // for (auto &tableName : g_tableFilenames)
+            let name_as_cstr = CStr::from_bytes_until_nul(&name)
+            .map_err(|_| PspError::StringRepresentation)?;
+            for table_name in G_TABLE_FILENAMES {
+                // AHG I CAN'T COMPARE Cstr with str FOR GOD'S SAKE
+                if name_as_cstr == table_name.0 {
+
+                }
+
+            }
 
         }
-        //... not finished yet...
+
+        println!("{sz_data_path}");
+        println!("{found}");
+
     }
 
     Ok(())
