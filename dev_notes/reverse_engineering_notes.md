@@ -298,6 +298,43 @@ Then what happens when the loop reaches **i = 98**?
 By writing `i < table_size - 5` the programmer is making sure the **Segmentation Fault** behavior doesn't happen.
 Why writing in Rust `for  i in 0..table.len()` it perfectly mimics the C++ behavior. But we must be carefull, since if `table.len()` happens to be less than 5, it will cause an integer underflow, resulting into panic with Rust's side.
 
+# pspDecryptTable
+It's not inside PsarDecrypter.cpp, so by looking at the imports, I might guess is inside pspdecrypt_lib.cpp or smt like that...
+
+```cpp
+int pspDecryptTable(u8 *buf1, u8 *buf2, int size, int psarVersion, int mode)
+```
+gotcha!!!. but it's not a big function btw. But just in case I'm going to create a new file .rs
+The translation was really easy, but I stumble upon another medium wall
+
+# DecryptT 
+DES_key_schedule schedule;
+What does that even mean? 💀 Maybe a struct inside the file? mhhm, a timer?
+I think is being imported with another library, since it's not a custom struct.. Let's research about it
+`des_key_sched(3)` - Linux man page
+`#include <openssl/des.h>` gotcha!!!, It's the fourth import inside pspdecrypt_lib.cpp
+Let's dissect and understand what does this even mean:
+- "This library contains a fast implementation of the DES encryption algorithm."
+- "DES encryption" algorithm? What is that? Let's get deeper
+
+DES encryption uses the same key for both encryption and decryption. And it uses 56 bits of lenght for the key, which means It's insecure for modern applications because it's too short.
+It's an algorithm that takes a fixed-length string of plaintext and uses complicated operations in order to convert it into another ciphertext bitstring of the same length. In the case of DES -> size is 64 bits. DES also uses a key to customize the transformation.
+
+Now that we know that, we can understand what does DES_key_schedule means inside linux man page:
+It's just a data structure that internaly contains the precomputed round keys.
+DES key (8 bytes) -> DES_set_key(..) -> DES_key_schedule() -> DES_ecb_encrypt(...) bla bla bla
+DES_set_key_unchecked: Takes the original 8 bytes key and fills in the `DES_key_schedule`-> The "unchecked" version doesn't verify whether the key has correct parity bits or whether it's a known weak key or smt like that.
+https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/DES-main-network.png/500px-DES-main-network.png
+
+`DES_ncbc_encrypt()`: Encrypts (or decrypts) data using:
+- DES key schedule
+- Initialization vector (IV)
+- CBC mode of OPERATION
+
+
+
+
+
 
 
 

@@ -5,6 +5,8 @@ use std::io::{self, Read};
 use crate::{PsarContext, PspError, SIZE_A};
 use crate::prx_types::decrypt_prx;
 use crate::kirk7;
+use crate::psp_decrypt_lib::psp_decrypt_table;
+
 const DATA_SIZE: usize = 3000000;
 use flate2::bufread::ZlibDecoder;
 use atoi::atoi;
@@ -206,7 +208,7 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
             sz_data_path = out_dir.to_owned() + "/F0/" + suffix;
             found = 1;
             std::fs::create_dir_all(&sz_data_path)?;
-        } else if &name[..8] == b"flash0:/" {
+        } else if &name[..8] == b"flash1:/" {
             sz_data_path = out_dir.to_owned() + "/F1/" + suffix;
             found = 1;
             std::fs::create_dir_all(&sz_data_path)?;
@@ -214,14 +216,15 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
             // for (auto &tableName : g_tableFilenames)
             let name_as_cstr = CStr::from_bytes_until_nul(&name)
             .map_err(|_| PspError::StringRepresentation)?;
+            let name_as_str = name_as_cstr.to_str().unwrap();
+
             for table_name in G_TABLE_FILENAMES {
                 // AHG I CAN'T COMPARE Cstr with str FOR GOD'S SAKE
-                if name_as_cstr == table_name.0 {
+                if name_as_str == table_name.0 {
+                    let size = psp_decrypt_table(&mut data_2, &mut data_1, cb_expanded, ctx.psar_version, ctx.table_mode);
 
                 }
-
             }
-
         }
 
         println!("{sz_data_path}");
@@ -678,3 +681,5 @@ fn find_table_path(
     }
     false
 }
+
+

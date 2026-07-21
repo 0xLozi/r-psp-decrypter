@@ -4,6 +4,7 @@ mod keys_service;
 mod kirk_lib;
 mod error_handling;
 mod prx_types;
+mod psp_decrypt_lib;
 use error_handling::errors::PspError;
 use std::fs::File;
 use std::io::{Read, Write};
