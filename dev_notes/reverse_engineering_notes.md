@@ -331,6 +331,42 @@ https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/DES-main-network.png/5
 - Initialization vector (IV)
 - CBC mode of OPERATION
 
+Ok I had to view the documentation about how DES works. Here's a summary:
+DES_key_schedule is the first generation of a des_key based on a 8 byte key. And this type makes sure to fullfill the needs of the DES_cblock type.
+- To generate a DES key schedule, the library needs an input “DES key” in the standard DES format: 8 bytes (DES_cblock).
+- Those 8 bytes include one odd-parity bit per byte (commonly the LSB).
+- The library then uses those bytes to derive the internal key schedule (effectively based on the 56 key bits, with parity bits serving formatting/validation roles).
+
+So I grab an implementation of this DES encryption algorithm and put it into my own project.
+Thanks I3r1h0n for the implementation. Here's the original DES implementation repo: https://github.com/I3r1h0n/des-rs/tree/main
+
+So... When I use `DES_cbc_encrypt(buf, buf, size, &schedule, (DES_cblock*)&table_keys[mode].iv, DES_DECRYPT);` and I pass `DES_DECRYPT`, what it does inside the original C++ library is apply the key backwards, therefore I had to `reverse()` it by doing this:
+
+```rust
+schedule.reverse();
+```
+Since it doesn't have a DES_DECRYPT flag to do the work for me, I had to make this sightgly change in order to make this work.
+
+Sorry but this implementation of des is simple... I need something really specific which is cbc_encrypt, and all of this stuff can be automated by just adding the official crate from Rust...
+
+`cargo add des`
+
+DES_set_key_unchecked means it does not validate the parity bits or reject weak keys. It simply takes the 8 bytes as provided and computes the key schedule.
+
+### Let's make a summary of what I've found throughout this 3 days
+`des::Des` -> This is the engine, like the raw mathematical **Data Encryption Standard (DES)** algorithm.
+- To make a short summary -> It takes exactly `8 bytes` of raw data, scrambles or unscrambles them using a key and then outputs 8 bytes.
+- We need it because the `C/C++` tool uses `DES_set_key_unchecked` and `DES_cbc_encrypt`.
+The `des::Des` struct replaces the `low-level` math. However, because it only processes `8 bytes` at a time, it can't decrypt the entire buf array on it's own.
+
+`cbc::Decryptor` -> This stand for Cipher Block Chaining (CBC), it's an universal manager for block ciphers.
+- This is necessary because `des::Des` is limited to **8 bytes**, so we need a manager in order to cut the massive array into **8-byte CHUNKS**, and then feed them into the DES algorithm one by on, and then link them together using the initial vector (IV).
+
+
+
+
+
+
 
 
 

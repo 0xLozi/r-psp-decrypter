@@ -51,9 +51,3 @@ This project started as a learning exercise in reverse engineering and low-level
 
 
 
-### Roadmap
- - Complete support for all tag types
- - More comprehensive unit and integration tests with real files
- - Richer CLI (progress bar, batch processing, output options)
- - Library mode (usable as a crate)
- - Performance benchmarks vs original C++ version
