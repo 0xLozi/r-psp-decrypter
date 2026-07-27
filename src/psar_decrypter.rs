@@ -222,14 +222,31 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
                 // AHG I CAN'T COMPARE Cstr with str FOR GOD'S SAKE
                 if name_as_str == table_name.0 {
                     let size = psp_decrypt_table(&mut data_2, &mut data_1, cb_expanded, ctx.psar_version, ctx.table_mode);
+                    let index: usize = table_name.1 as usize;
+                    ctx.g_tables[index].resize(size, 0);
+                    ctx.g_tables[index].copy_from_slice(&data_2[..size]);
 
+                    sz_data_path = {
+                        if table_name.1 == 0 {
+                            format!("{}/PSARDUMPER/common_files_table.bin", out_dir)
+                        } else {
+                            // sprintf(modelNum, "%05d", tableName.second);
+                            format!("{}/PSARDUMPER/{:05}_files_table, ",out_dir, table_name.1)
+                        }
+                    };
+                    found = 1;
+                    break;
                 }
+            }
+
+            if found == 0 {
+                let filename = name_as_str.rsplit('/').next().unwrap_or(name_as_str);
+                sz_data_path = out_dir.to_owned() + "/PSARDUMPER/" + filename;
             }
         }
 
         println!("{sz_data_path}");
         println!("{found}");
-
     }
 
     Ok(())
@@ -428,32 +445,6 @@ fn execute_kirk_cmd7(buffer: &mut[u8]) -> Result<(), PspError> {
     
     buffer.copy_within(20..(20+0x130), 0);
     Ok(())
-}
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_decode_block_fast_path() {
-        // First. We setup a fake context that says the file is already decrypted.
-        let mut ctx = PsarContext::new();
-        ctx.decrypted = true;
-
-        // 2. Setup our inputs and outputs
-        let input_data: [u8; 4] = [0xDE, 0xAD, 0xBE, 0xEF];
-        let mut output_buffer: [u8; 10] = [0; 10]; // Slightly larger buffer
-
-        // 3. Call the function
-        let result = decode_block(&input_data, 4, &mut output_buffer, &ctx);
-
-        // 4. Assertions
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 4); // Should return cb_in (4)
-        assert_eq!(&output_buffer[..4], &[0xDE, 0xAD, 0xBE, 0xEF]); // Data should be perfectly copied
-    }
-
 }
 
 
@@ -682,4 +673,29 @@ fn find_table_path(
     false
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_decode_block_fast_path() {
+        // First. We setup a fake context that says the file is already decrypted.
+        let mut ctx = PsarContext::new();
+        ctx.decrypted = true;
+
+        // 2. Setup our inputs and outputs
+        let input_data: [u8; 4] = [0xDE, 0xAD, 0xBE, 0xEF];
+        let mut output_buffer: [u8; 10] = [0; 10]; // Slightly larger buffer
+
+        // 3. Call the function
+        let result = decode_block(&input_data, 4, &mut output_buffer, &ctx);
+
+        // 4. Assertions
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 4); // Should return cb_in (4)
+        assert_eq!(&output_buffer[..4], &[0xDE, 0xAD, 0xBE, 0xEF]); // Data should be perfectly copied
+    }
+
+}
 

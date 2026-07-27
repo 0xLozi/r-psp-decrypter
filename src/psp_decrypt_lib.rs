@@ -83,7 +83,6 @@ fn decrypt_t(buf2: &mut [u8], size: usize, mode: usize) {
     let iv = TABLE_KEYS[mode].iv;
     let decryptor: Decryptor<Des> = Decryptor::new(&key.into(), &iv.into());
 
-    // I know it's bad for me to do "expect", but I'll fix that in the future
     decryptor
         .decrypt_padded_mut::<NoPadding>(&mut buf2[..size])
         .expect("Decryption failed: Buffer size must be a multiple of 8!!!!!");
