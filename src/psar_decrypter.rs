@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::io::{self, Read};
+use std::ffi::CString;
 
 use crate::{PsarContext, PspError, SIZE_A};
 use crate::prx_types::decrypt_prx;
@@ -39,7 +40,7 @@ static G_TABLE_FILENAMES: &[(&str, u8)] = &[
     ("00012", 12),
 ];
 
-pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) -> Result<(), PspError> {
+pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, extract_only: bool) -> Result<(), PspError> {
     // kirk_init: but not neccessary
     let magic: [u8; 4] = data_psar[..4]
         .try_into()
@@ -238,15 +239,62 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext) 
                     break;
                 }
             }
+        }
 
-            if found == 0 {
-                let filename = name_as_str.rsplit('/').next().unwrap_or(name_as_str);
-                sz_data_path = out_dir.to_owned() + "/PSARDUMPER/" + filename;
-            }
+        if found == 0 {
+            let name_as_cstr = CStr::from_bytes_until_nul(&name)
+            .map_err(|_| PspError::StringRepresentation)?;
+            let name_as_str = name_as_cstr.to_str().unwrap();
+            let filename = name_as_cstr.to_str().unwrap().rsplit('/').next().unwrap_or(name_as_str);
+
+            sz_data_path = out_dir.to_owned() + "/PSARDUMPER/" + filename;
         }
 
         println!("{sz_data_path}");
         println!("{found}");
+
+        // I can't do cb_expanded... And this is why:
+        // First: decrypt_prx in this context it doesn't do an in-place decryption... It stores the result in data_1. And if I call decrypt_prx, I might replace data from data_2 that can be useful in the near future. However now that I think of it: I can copy data_2 into data_1 and only send data_1 while doing decrypt_prx... Let's try that
+        if cb_expanded > 0 {
+            log_str += "expanded";
+            // If we don't decrypt modules, or for non-encrypted models
+
+            if extract_only && data_2[..4] == *b"~PSP" {
+                if !extract_only && 
+                    name.starts_with(b"ipl:") && 
+                    u32::from_le_bytes(data_2[0x60..0x60+4].try_into().unwrap()) != 1u32 && 
+                    u32::from_le_bytes(data_2[0x60..0x60+4].try_into().unwrap()) != 0x10001 
+                {
+                    data_1 = data_2;
+
+
+                    let mut key_array = [0u8;16];
+                    let usize_bytes = cb_expanded.to_le_bytes();
+                    key_array[..usize_bytes.len()].copy_from_slice(&usize_bytes);
+                    cb_expanded = decrypt_prx(&mut data_1, Some(&key_array))?;
+
+                    if cb_expanded <= 0 {
+                        log_str += ",pre-decrypt failed";
+                    } else {
+                        log_str += ",pre-decrypt good hehe";
+                        // memcpy(data2, data1, cbExpanded);
+                        data_2[..cb_expanded].copy_from_slice(&data_1);
+                    }
+                }
+                
+                // let name_as_cstr = CStr::from_bytes_until_nul(&name)
+                let sz_data_path_as_c_string = CString::new(sz_data_path).expect("CString::new() failed...");
+
+
+                if write_file(sz_data_path_as_c_string, data_2, cb_expanded) != cb_expanded {
+                    println!("Error writing {:?}. \n", sz_data_path_as_c_string);
+                    break;
+                }
+
+            }
+        }
+
+
     }
 
     Ok(())
