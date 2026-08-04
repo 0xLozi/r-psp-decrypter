@@ -363,6 +363,34 @@ The `des::Des` struct replaces the `low-level` math. However, because it only pr
 - This is necessary because `des::Des` is limited to **8 bytes**, so we need a manager in order to cut the massive array into **8-byte CHUNKS**, and then feed them into the DES algorithm one by on, and then link them together using the initial vector (IV).
 
 
+### WriteFile
+While doing a research by looking at the imports, I stumble across a file called "common.h". Entered into that file and found WriteFile. So I was right: It was a custom function, not a native one. 
+I have gound the .cpp file that implements this "WriteFile":
+```cpp
+#include <fstream>
+#include <zlib.h>
+
+#include "CommonTypes.h"
+
+int WriteFile(const char *file, void *buf, int size)
+{
+    std::fstream myfile;
+    myfile = std::fstream(file, std::ios::out | std::ios::binary);
+    myfile.write((char*)buf, size);
+    myfile.close();
+    return size;
+}
+```
+There is more code that I'm not putting since it's not the main topic (e.g. gunzip, that's why It imported `zlib.h`).
+
+So `WriteFile` returns an int and receives a const char pointer called file, a void pointer called buf, and a size.
+Then it performs `fstream`, `write`, and `close`.
+
+#### Why I decided write_all() as a replacement for write() in C
+If I have a custom buffer that is 500 bytes len, while doing the write() function in C, the OS is the one that manages that writing, so If the CPU is busy and can only write 200 bytes from 500 bytes needed, it just writes those 200 bytes and then returns the result, leading to undefined behavior and uncompleted writes.
+
+Therefore What rust does with write_all() is, just as the function describes, make sure that the OS writes each byte from the buffer and until it doesn't finished writing every byte, it doesn't stop.
+
 
 
 

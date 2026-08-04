@@ -1,12 +1,13 @@
 use std::fs;
 use std::path::Path;
 use std::io::{self, Read};
-use std::ffi::CString;
+crate::common::write_file;
 
 use crate::{PsarContext, PspError, SIZE_A};
 use crate::prx_types::decrypt_prx;
 use crate::kirk7;
 use crate::psp_decrypt_lib::psp_decrypt_table;
+use crate::common::{self, write_file};
 
 const DATA_SIZE: usize = 3000000;
 use flate2::bufread::ZlibDecoder;
@@ -274,27 +275,34 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
                     cb_expanded = decrypt_prx(&mut data_1, Some(&key_array))?;
 
                     if cb_expanded <= 0 {
-                        log_str += ",pre-decrypt failed";
+                        log_str += ", pre-decrypt failed";
                     } else {
-                        log_str += ",pre-decrypt good hehe";
+                        log_str += ", pre-decrypt good hehe";
                         // memcpy(data2, data1, cbExpanded);
                         data_2[..cb_expanded].copy_from_slice(&data_1);
                     }
                 }
-                
-                // let name_as_cstr = CStr::from_bytes_until_nul(&name)
-                let sz_data_path_as_c_string = CString::new(sz_data_path).expect("CString::new() failed...");
 
-
-                if write_file(sz_data_path_as_c_string, data_2, cb_expanded) != cb_expanded {
-                    println!("Error writing {:?}. \n", sz_data_path_as_c_string);
+                if common::write_file(&sz_data_path, &data_2).is_err() {
+                    println!("Cannot write {}", sz_data_path);
                     break;
                 }
+                log_str.push_str(", saved");
 
+                // if (CheckExtractReboot(name, data2, cbExpanded, data1, data2, outdir, extractOnly, logStr) < 0) {
+                //     logStr += ",error extracting/decrypting reboot.bin";
+                // }
+                // Wtf is this? Oh yeah it's a function inside PsarDecrypter
+                if check_extract_reboot(&name, pb_to_save, cb_to_save, &data_1, &data_2, out_dir, extract_only, &log_str) < 0{
+                    log_str += ", error extracting/decrypting reboot.bin";
+                }
+            }
+
+            // For encrypted ~PSP Modules, or ME images, if decrypting is not disabled
+            if data_2[..4] == *b"~PSP" || name[..b"flash0:/kd/resource/me".len()] == *b"flash0:/kd/resource/me" && !extract_only{
+                // do some weird thing
             }
         }
-
-
     }
 
     Ok(())
@@ -661,7 +669,6 @@ fn is_5_d_num(name: &[u8; 128]) -> bool {
             return false;
         }
     }
-
     true
 }
 
@@ -722,6 +729,110 @@ fn find_table_path(
 }
 
 
+// just in case I use size since i don't know which size inside the fat pointer uses. Technically it must be input, but since the original tool does weird things such as in-data extraction and some sort. I prefer being cautious
+fn find_reboot(input: &[u8], output: &mut [u8]) -> i32 {
+    // making sure it doesn't do undefined behavior. Therefore I don't need "size" parameter just like C does.
+    if input.len() < 0x30 {
+        return -1
+    }
+    let mut size = -1;
+
+    //
+    for i in 0..input.len() - 0x30 {
+        // I'm gonna use the len() tbh, since size isn't an usize...
+        // de-reference since it's a static reference, therefore If I want this to be comparable, I have to use "*"
+        if input[i..i+4] == *b"~PSP" {
+            // size = *(u32 *)&input[i+0x2C]; I have  aproblema with this: I can just make this an u32 and send a range, but I don't know If "size" is gonna go PAST those bytes, therefore it's risky to do that. However just to make a "patch" I'm gonna use u32::from_le_bytes even though we aren't considering more bytes. Because of what I'm currenlty seing In imhex. This is just an hypothesis
+            size = i32::from_le_bytes(input[i+0x2C.. i+0x2C + 4].try_into().unwrap());
+            // memcpy(output, input+i, size); input means the start of input + displacement of i
+            output[..size as usize].copy_from_slice(&input[i..size as usize]);
+            return size;
+        }
+    }
+    size
+}
+
+// don't need loadexec_data_size since load_exec_data is a fat pointer, therefore it contains the size inside
+fn extract_reboot(load_exec_data: &[u8], reboot: &[u8], reboot_name: &[u8], data_1: &mut [u8], data_2: &mut [u8], extract_only: bool, log_str: &mut String) -> i32 {
+    data_1[..load_exec_data.len()].copy_from_slice(load_exec_data);
+
+    if load_exec_data.len() <= 0 {
+        return -1;
+    }
+
+    // let name_reboot = CStr::from_bytes_until_nul(reboot_name).unwrap();
+    // let name_str = name_reboot.to_str().unwrap_or("UNKNOWN");
+    // yeah, I like this way better
+    let Ok(name_reboot) = CStr::from_bytes_until_nul(reboot_name) else {
+        return -1;
+    };
+
+    let Ok(name_str) = name_reboot.to_str() else {
+        return -1;
+    };
+    
+    *log_str += " Extracting "; 
+    *log_str += name_str;
+
+    // I don't have this...
+    // let s = find_reboot()
+    let s = find_reboot(data_1, data_2);
+    if s <= 0 {
+        // unsecure but IM STRONGLY SURE THAT THIS IS CORRECT.... I think
+        let name_cstr = CStr::from_bytes_until_nul(reboot_name).unwrap();
+        println!("Cannot find {} inside loadexec. \n", name_cstr.to_str().unwrap());
+    }
+
+    if extract_only {
+        if write_file(reboot, data_2, s) != s {
+            println!("Cannot write {} \n", reboot);
+        }
+        log_str += ", saved!";
+        return 0;
+    }
+
+    // lets see if this works
+    let data_1 = data_2;
+    let susize: usize = decrypt_prx(data_1, None).unwrap();
+    if susize <= 0 {
+        println!("Cannot decrypt {} \n", name_reboot);
+        return -1;
+    }
+    log_str.push_str(",decrypted");
+
+    let Ok(reboot_cstr) = CStr::from_bytes_until_nul(&reboot) else {
+        return -1;
+    };
+    let reboot_str = reboot_cstr.to_str().unwrap();
+    write_file(reboot_str, data_1);
+
+
+    // I don't have this function
+    s = psp_decompress();
+
+    0
+}
+
+// THIS IS INCOMPLETED SINCE I HAVEN'T WRITTEN EXTRACT_REBOOT FUNCTION YET!!!
+fn check_extract_reboot(name: &[u8], pb_to_save: &[u8], cb_to_save: u32, data_1: &[u8], data_2: &[u8], out_dir: &str, extract_only: bool, log_str: &String) -> i8 {
+    if name == b"flash0:/kd/loadexec.prx" {
+        // extract_reboot
+    } else if name == b"flash0:/kd/loadexec_" {
+        if name.len() == b"flash0:/kd/loadexec_00g.prx".len() {
+            let mut filename = *b"reboot_00g.bin";
+            filename[b"reboot_".len()] = name[b"flash0:/kd/loadexec_".len()];
+            println!("{:?}", filename);
+            filename[b"reboot_".len() + 1] = name["flash0:/kd/loadexec_".len() + 1];
+            println!("{:?}", filename);
+            // return extract_reboot
+        }
+        return -1
+    }
+    0
+}
+
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -746,4 +857,5 @@ mod tests {
     }
 
 }
+
 
