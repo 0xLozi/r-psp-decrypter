@@ -326,7 +326,6 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
                         else {
                             log_str += ", error decompressing";
                         }
-
                     }
     
 
@@ -922,6 +921,7 @@ fn check_extract_reboot(name: &[u8], pb_to_save: &[u8], cb_to_save: u32, data_1:
     }
     0
 }
+
 
 
 #[cfg(test)]
