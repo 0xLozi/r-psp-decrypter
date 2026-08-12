@@ -1,13 +1,12 @@
 use std::fs;
 use std::path::Path;
 use std::io::{self, Read};
-crate::common::write_file;
+use crate::common::write_file;
 
 use crate::{PsarContext, PspError, SIZE_A};
 use crate::prx_types::decrypt_prx;
 use crate::kirk7;
 use crate::psp_decrypt_lib::psp_decrypt_table;
-use crate::common::{self, write_file};
 
 const DATA_SIZE: usize = 3000000;
 use flate2::bufread::ZlibDecoder;
@@ -260,7 +259,7 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
             log_str += "expanded";
             // If we don't decrypt modules, or for non-encrypted models
 
-            if extract_only && data_2[..4] == *b"~PSP" {
+            if extract_only || data_2[..4] == *b"~PSP" {
                 if !extract_only && 
                     name.starts_with(b"ipl:") && 
                     u32::from_le_bytes(data_2[0x60..0x60+4].try_into().unwrap()) != 1u32 && 
@@ -283,7 +282,7 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
                     }
                 }
 
-                if common::write_file(&sz_data_path, &data_2).is_err() {
+                if write_file(&sz_data_path, &data_2).is_err() {
                     println!("Cannot write {}", sz_data_path);
                     break;
                 }
@@ -296,12 +295,107 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
                 if check_extract_reboot(&name, pb_to_save, cb_to_save, &data_1, &data_2, out_dir, extract_only, &log_str) < 0{
                     log_str += ", error extracting/decrypting reboot.bin";
                 }
+
             }
 
             // For encrypted ~PSP Modules, or ME images, if decrypting is not disabled
             if data_2[..4] == *b"~PSP" || name[..b"flash0:/kd/resource/me".len()] == *b"flash0:/kd/resource/me" && !extract_only{
-                // do some weird thing
+                data_1.copy_from_slice(&data_2);
+                let mut seed = [0u8;16];
+                let cb_bytes = (cb_expanded as u32).to_le_bytes();
+
+                seed[..4].copy_from_slice(&cb_bytes);
+                let cb_decrypted: usize = decrypt_prx(&mut data_1, Some(&seed)).unwrap();
+
+                if cb_decrypted > 0 {
+                    let pb_to_save = &data_1;
+                    let cb_to_save = cb_decrypted;
+
+                    log_str += ", decrypted";
+                    let end_ptr: &[u8];
+                    let cb_remain = 0;
+
+                    if data_1[0] == 0x1F && data_1[1] == 0x8B || data_1[..4] == *b"23LZ" || data_1[..4] == *b"KL4E" {
+                        let cb_exp = psp_decompress(data_1, cb_to_save, data_2, 3000000, log_str, &end_ptr);
+                        cb_remain = data_1 + cb_to_save - end_ptr;
+                        if cb_exp > 0 {
+                            log_str += ", expanded";
+                            pb_to_save = data_2;
+                            cb_to_sabe = cb_exp;
+                        }
+                        else {
+                            log_str += ", error decompressing";
+                        }
+
+                    }
+    
+
+
+
+                    // u8* pbToSave = data1;
+                    // int cbToSave = cbDecrypted;
+
+                    // logStr += ",decrypted";
+                    // u8 *endPtr;
+                    // int cbRemain = 0;
+
+                    // if ((data1[0] == 0x1F && data1[1] == 0x8B) ||
+                    //     memcmp(data1, "2RLZ", 4) == 0 || memcmp(data1, "KL4E", 4) == 0)
+                    // {
+                    //     int cbExp = pspDecompress(data1, cbToSave, data2, 3000000, logStr, &endPtr);
+                    //     cbRemain = data1 + cbToSave - endPtr;
+
+                    //     if (cbExp > 0)
+                    //     {
+                    //         logStr += ",expanded";
+                    //         pbToSave = data2;
+                    //         cbToSave = cbExp;
+                    //     }
+                    //     else
+                    //     {
+                    //         logStr += ",error decompressing";
+                    //     }
+                }
+
+                // need import write file
+                if write_file(&sz_data_path, &data_2).unwrap() != cb_expanded {
+                    println!("Cannot write {}", sz_data_path);
+                    break;
+                }
+                log_str += ", saved!!!";
+                
+                if check_extract_reboot(&name, pb_to_save, cb_to_save, &mut data_1, &mut data_2, out_dir, extract_only, &mut log_str) < 0 {
+                    log_str += ", error extracting/decrypting reboot.bin"
+                }
+
+                // I don't think I need it this...
+                // if (cbRemain > 0) {
+                //     u8 *endPtr2;
+                //     logStr += "Has part2";
+                //     int cbExp = pspDecompress(endPtr, cbRemain, data2, 3000000, logStr, &endPtr2);
+                //     if (cbExp > 0) {
+                //         logStr += ",decompressed,saved!";
+                //         if (endPtr + cbRemain - endPtr2 != 0) {
+                //             logStr += "Error: garbage at end.";
+                //         }
+                //         if (WriteFile((szDataPath + ".2").c_str(), data2, cbExp) != cbExp)
+                //         {
+                //             printf("Error writing %s.\n", (szDataPath + ".2").c_str());
+                //         }
+                //     } else {
+                //         logStr += ",error decompressing!";
+                //     }
+                // }
             }
+            else {
+                let tag_str = u32::from_le_bytes(data_2[0xD0..0xD0+4].try_into().unwrap());
+                let tag_str_formatted = format!("{:08}", tag_str);
+                log_str += &(", error during decryption [tag ".to_owned() + &tag_str_formatted + "].");
+            }
+        }
+        //testing
+        else if (5 > 0) {
+
         }
     }
 
@@ -756,7 +850,7 @@ fn find_reboot(input: &[u8], output: &mut [u8]) -> i32 {
 fn extract_reboot(load_exec_data: &[u8], reboot: &[u8], reboot_name: &[u8], data_1: &mut [u8], data_2: &mut [u8], extract_only: bool, log_str: &mut String) -> i32 {
     data_1[..load_exec_data.len()].copy_from_slice(load_exec_data);
 
-    if load_exec_data.len() <= 0 {
+    if &load_exec_data.len() <= &(0 as usize) {
         return -1;
     }
 
@@ -792,20 +886,20 @@ fn extract_reboot(load_exec_data: &[u8], reboot: &[u8], reboot_name: &[u8], data
     }
 
     // lets see if this works
-    let data_1 = data_2;
-    let susize: usize = decrypt_prx(data_1, None).unwrap();
-    if susize <= 0 {
+    data_1.copy_from_slice(data_2);
+    let s_usize: usize = decrypt_prx(data_1, None).unwrap();
+
+    if s_usize <= 0 {
         println!("Cannot decrypt {} \n", name_reboot);
         return -1;
     }
-    log_str.push_str(",decrypted");
+    log_str.push_str(", decrypted");
 
     let Ok(reboot_cstr) = CStr::from_bytes_until_nul(&reboot) else {
         return -1;
     };
     let reboot_str = reboot_cstr.to_str().unwrap();
     write_file(reboot_str, data_1);
-
 
     // I don't have this function
     s = psp_decompress();
@@ -814,23 +908,20 @@ fn extract_reboot(load_exec_data: &[u8], reboot: &[u8], reboot_name: &[u8], data
 }
 
 // THIS IS INCOMPLETED SINCE I HAVEN'T WRITTEN EXTRACT_REBOOT FUNCTION YET!!!
-fn check_extract_reboot(name: &[u8], pb_to_save: &[u8], cb_to_save: u32, data_1: &[u8], data_2: &[u8], out_dir: &str, extract_only: bool, log_str: &String) -> i8 {
+fn check_extract_reboot(name: &[u8], pb_to_save: &[u8], cb_to_save: u32, data_1: &mut [u8], data_2: &mut [u8], out_dir: &str, extract_only: bool, log_str: &mut String) -> i32 {
     if name == b"flash0:/kd/loadexec.prx" {
-        // extract_reboot
+        return extract_reboot(pb_to_save, (out_dir + "/PSARDUMPER/reboot.bin"),"reboot.bin".as_bytes(),data_1, data_2, extract_only, log_str);
     } else if name == b"flash0:/kd/loadexec_" {
         if name.len() == b"flash0:/kd/loadexec_00g.prx".len() {
-            let mut filename = *b"reboot_00g.bin";
+            let mut filename : &[u8] = b"reboot_00g.bin";
             filename[b"reboot_".len()] = name[b"flash0:/kd/loadexec_".len()];
-            println!("{:?}", filename);
             filename[b"reboot_".len() + 1] = name["flash0:/kd/loadexec_".len() + 1];
-            println!("{:?}", filename);
-            // return extract_reboot
+            return extract_reboot(pb_to_save, (out_dir + "/PSARDUMPER/" + filename), filename, data_1, data_2, extract_only, log_str);
         }
         return -1
     }
     0
 }
-
 
 
 #[cfg(test)]

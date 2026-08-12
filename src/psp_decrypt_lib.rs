@@ -1,8 +1,11 @@
+use std::io::Read;
+
 use crate::{prx_types::decrypt_prx};
 use aes::cipher::BlockDecryptMut;
 use des::Des;
 use cbc::Decryptor;
 use des::cipher::block_padding::NoPadding;
+use flate2::bufread::ZlibDecoder;
 
 // The des crate automatically includes the cipher rulebook
 // This gives Decryptor the ability to use .new()
@@ -86,4 +89,38 @@ fn decrypt_t(buf2: &mut [u8], size: usize, mode: usize) {
     decryptor
         .decrypt_padded_mut::<NoPadding>(&mut buf2[..size])
         .expect("Decryption failed: Buffer size must be a multiple of 8!!!!!");
+}
+
+
+////// DECOMPRESSIOOOOOOOOOOOON /////
+// Here inbuff_end was a &&[u8], but since it's an immutable pointer, I can't change where the decompression stopped and that stuff because of lifetime issues. Therefore I'm gonna change this and change inbuf_end into an i32
+fn psp_decompress(inbuf: &[u8], outbuf: &mut [u8], out_capacity: u32, log_str: &mut String, inbuf_end: usize) -> i8 {
+    let ret_size: u32 = 0; // idk
+
+    if inbuf.len() < 2 {
+        return -1;
+    }
+    // WHY WE SKIP MANUAL BUFFER TRACKING (cb_remain / inbufEnd / realSize):
+    if inbuf[0] == 0x1F  && inbuf[1] == 0x8B {
+        // retsize = gunzip(inbuf, insize, outbuf, outcapacity, &realSize);
+        // I don't know if This implementation is correct. So Im gonna write it as how I think it is
+        //In the original c++ tool, gunzip acted as a memory pipe. The dev had to manually calculate exactly how many compressed bytes were consumed and uptadte pointers so th eamin loop would know exactly where the next file chunk started
+        // In Rust, we bypass this manual pointer math
+        // By passing a byte slice into gzDecoder, we take advantage of Rust 'Read' trait. The decode treats the slice as a continuous data system. So as it decodes
+        let real_size: usize = 0;
+        retsize = gunzip();
+
+        let mut decoder = ZlibDecoder::new(inbuf);
+        // this is wrong
+        let result = decoder.read_exact(outbuf);
+        if result.is_ok() {
+            inbuf_end = &&inbuf[real_size..]; 
+        }
+        *log_str += ", gzip";
+    } else {
+
+    }
+
+    0
+
 }
