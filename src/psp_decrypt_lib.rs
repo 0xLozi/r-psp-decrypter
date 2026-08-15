@@ -1,15 +1,25 @@
-use std::io::Read;
+// This suppresses standard Rust warnings for C-style naming conventions
+#![allow(non_upper_case_globals)]
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
 
 use crate::{prx_types::decrypt_prx};
 use aes::cipher::BlockDecryptMut;
 use des::Des;
 use cbc::Decryptor;
 use des::cipher::block_padding::NoPadding;
-use flate2::bufread::ZlibDecoder;
+use crate::common::gunzip;
+use std::ffi::c_void;
 
 // The des crate automatically includes the cipher rulebook
 // This gives Decryptor the ability to use .new()
 use des::cipher::KeyIvInit;
+
+
+// This built-in Rust macro tells the compiler: 
+// "Go to the secret OUT_DIR, find 'bindings.rs', and paste all its code right here!"
+include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+
 
 //// THIS IS DES TABLE DECRYPTION /// 
 struct TableKeys {
@@ -94,8 +104,8 @@ fn decrypt_t(buf2: &mut [u8], size: usize, mode: usize) {
 
 ////// DECOMPRESSIOOOOOOOOOOOON /////
 // Here inbuff_end was a &&[u8], but since it's an immutable pointer, I can't change where the decompression stopped and that stuff because of lifetime issues. Therefore I'm gonna change this and change inbuf_end into an i32
-fn psp_decompress(inbuf: &[u8], outbuf: &mut [u8], out_capacity: u32, log_str: &mut String, inbuf_end: usize) -> i8 {
-    let ret_size: u32 = 0; // idk
+fn psp_decompress(inbuf: &[u8], in_size: u32, outbuf: &mut [u8], out_capacity: u32, log_str: &mut String, inbuf_end: Option<&mut u32>) -> i8 {
+    let mut ret_size: i32 = 0; // idk
 
     if inbuf.len() < 2 {
         return -1;
@@ -107,19 +117,41 @@ fn psp_decompress(inbuf: &[u8], outbuf: &mut [u8], out_capacity: u32, log_str: &
         //In the original c++ tool, gunzip acted as a memory pipe. The dev had to manually calculate exactly how many compressed bytes were consumed and uptadte pointers so th eamin loop would know exactly where the next file chunk started
         // In Rust, we bypass this manual pointer math
         // By passing a byte slice into gzDecoder, we take advantage of Rust 'Read' trait. The decode treats the slice as a continuous data system. So as it decodes
-        let real_size: usize = 0;
-        retsize = gunzip();
+        let mut real_size: u32 = 0;
+        // inside common.h we have this s32 gunzip(u8 *inBuf, u32 inSize, u8 *outBuf, u32 outSize, u32 *realInSize = NULL, bool noHeader = false); Therefore since inside the original tool doesn't specify no_header, we send "false"
+        ret_size = gunzip(inbuf, in_size as usize, outbuf, out_capacity as usize, Some(&mut real_size), false);
 
-        let mut decoder = ZlibDecoder::new(inbuf);
-        // this is wrong
-        let result = decoder.read_exact(outbuf);
-        if result.is_ok() {
-            inbuf_end = &&inbuf[real_size..]; 
+        if let Some(end) = inbuf_end {
+            *end = real_size;
         }
+
         *log_str += ", gzip";
-    } else {
+    } else if inbuf[..4] == *b"2RLZ" {
+
+        let in_end_ptr: *mut c_void = std::ptr::null_mut();
+
+        ret_size = unsafe {
+            // outbuf, out_capacity, inbuf+4, inbufEnd
+            // types inside c:
+            // outbuf: *u8
+            // out_capacity: u32
+            // inbuf: *u8
+            // inbuf_end: u8 **
+            LZRDecompress (
+                outbuf.as_mut_ptr() as *mut c_void,
+                out_capacity,
+                inbuf.as_ptr() as *mut c_void,
+                in_end_ptr,
+            )
+        };
+
+        *log_str += ",lzrc";
+    } else if inbuf[..4] == *b"KL4E"{
+
 
     }
+
+    println!("{}", ret_size);
 
     0
 

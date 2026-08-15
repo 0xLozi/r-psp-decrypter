@@ -292,9 +292,9 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
                 //     logStr += ",error extracting/decrypting reboot.bin";
                 // }
                 // Wtf is this? Oh yeah it's a function inside PsarDecrypter
-                if check_extract_reboot(&name, pb_to_save, cb_to_save, &data_1, &data_2, out_dir, extract_only, &log_str) < 0{
-                    log_str += ", error extracting/decrypting reboot.bin";
-                }
+                // if check_extract_reboot(&name, pb_to_save, cb_to_save, &data_1, &data_2, out_dir, extract_only, &log_str) < 0{
+                //     log_str += ", error extracting/decrypting reboot.bin";
+                // }
 
             }
 
@@ -316,16 +316,16 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
                     let cb_remain = 0;
 
                     if data_1[0] == 0x1F && data_1[1] == 0x8B || data_1[..4] == *b"23LZ" || data_1[..4] == *b"KL4E" {
-                        let cb_exp = psp_decompress(data_1, cb_to_save, data_2, 3000000, log_str, &end_ptr);
-                        cb_remain = data_1 + cb_to_save - end_ptr;
-                        if cb_exp > 0 {
-                            log_str += ", expanded";
-                            pb_to_save = data_2;
-                            cb_to_sabe = cb_exp;
-                        }
-                        else {
-                            log_str += ", error decompressing";
-                        }
+                        // let cb_exp = psp_decompress(data_1, cb_to_save, data_2, 3000000, log_str, &end_ptr);
+                        // cb_remain = data_1 + cb_to_save - end_ptr;
+                        // if cb_exp > 0 {
+                        //     log_str += ", expanded";
+                        //     pb_to_save = data_2;
+                        //     cb_to_sabe = cb_exp;
+                        // }
+                        // else {
+                        //     log_str += ", error decompressing";
+                        // }
                     }
     
 
@@ -363,9 +363,9 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
                 }
                 log_str += ", saved!!!";
                 
-                if check_extract_reboot(&name, pb_to_save, cb_to_save, &mut data_1, &mut data_2, out_dir, extract_only, &mut log_str) < 0 {
-                    log_str += ", error extracting/decrypting reboot.bin"
-                }
+                // if check_extract_reboot(&name, pb_to_save, cb_to_save, &mut data_1, &mut data_2, out_dir, extract_only, &mut log_str) < 0 {
+                //     log_str += ", error extracting/decrypting reboot.bin"
+                // }
 
                 // I don't think I need it this...
                 // if (cbRemain > 0) {
@@ -877,10 +877,10 @@ fn extract_reboot(load_exec_data: &[u8], reboot: &[u8], reboot_name: &[u8], data
     }
 
     if extract_only {
-        if write_file(reboot, data_2, s) != s {
-            println!("Cannot write {} \n", reboot);
-        }
-        log_str += ", saved!";
+        // if write_file(reboot, data_2, s) != s {
+        //     println!("Cannot write {} \n", reboot);
+        // }
+        // log_str += ", saved!";
         return 0;
     }
 
@@ -889,7 +889,7 @@ fn extract_reboot(load_exec_data: &[u8], reboot: &[u8], reboot_name: &[u8], data
     let s_usize: usize = decrypt_prx(data_1, None).unwrap();
 
     if s_usize <= 0 {
-        println!("Cannot decrypt {} \n", name_reboot);
+        // println!("Cannot decrypt {} \n", name_reboot);
         return -1;
     }
     log_str.push_str(", decrypted");
@@ -901,7 +901,7 @@ fn extract_reboot(load_exec_data: &[u8], reboot: &[u8], reboot_name: &[u8], data
     write_file(reboot_str, data_1);
 
     // I don't have this function
-    s = psp_decompress();
+    // s = psp_decompress();
 
     0
 }
@@ -909,13 +909,13 @@ fn extract_reboot(load_exec_data: &[u8], reboot: &[u8], reboot_name: &[u8], data
 // THIS IS INCOMPLETED SINCE I HAVEN'T WRITTEN EXTRACT_REBOOT FUNCTION YET!!!
 fn check_extract_reboot(name: &[u8], pb_to_save: &[u8], cb_to_save: u32, data_1: &mut [u8], data_2: &mut [u8], out_dir: &str, extract_only: bool, log_str: &mut String) -> i32 {
     if name == b"flash0:/kd/loadexec.prx" {
-        return extract_reboot(pb_to_save, (out_dir + "/PSARDUMPER/reboot.bin"),"reboot.bin".as_bytes(),data_1, data_2, extract_only, log_str);
+        // return extract_reboot(pb_to_save, (out_dir + "/PSARDUMPER/reboot.bin"),"reboot.bin".as_bytes(),data_1, data_2, extract_only, log_str);
     } else if name == b"flash0:/kd/loadexec_" {
         if name.len() == b"flash0:/kd/loadexec_00g.prx".len() {
             let mut filename : &[u8] = b"reboot_00g.bin";
-            filename[b"reboot_".len()] = name[b"flash0:/kd/loadexec_".len()];
-            filename[b"reboot_".len() + 1] = name["flash0:/kd/loadexec_".len() + 1];
-            return extract_reboot(pb_to_save, (out_dir + "/PSARDUMPER/" + filename), filename, data_1, data_2, extract_only, log_str);
+            // filename[b"reboot_".len()] = name[b"flash0:/kd/loadexec_".len()];
+            // filename[b"reboot_".len() + 1] = name["flash0:/kd/loadexec_".len() + 1];
+            // return extract_reboot(pb_to_save, (out_dir + "/PSARDUMPER/" + filename), filename, data_1, data_2, extract_only, log_str);
         }
         return -1
     }
