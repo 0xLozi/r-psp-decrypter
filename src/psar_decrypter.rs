@@ -295,16 +295,15 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
 
             // For encrypted ~PSP Modules, or ME images, if decrypting is not disabled
             if data_2[..4] == *b"~PSP" || name[..b"flash0:/kd/resource/me".len()] == *b"flash0:/kd/resource/me" && !extract_only{
-                // I don't understand why i did this in the first place...
-                // data_1.copy_from_slice(&data_2);
-                // let mut seed = [0u8;16];
-                // let cb_bytes = (cb_expanded as u32).to_le_bytes();
-                // seed[..4].copy_from_slice(&cb_bytes);
+                data_1.copy_from_slice(&data_2);
+                let mut seed = [0u8;16];
+                let cb_bytes = (cb_expanded as u32).to_le_bytes();
+                seed[..4].copy_from_slice(&cb_bytes);
                
 
                 data_1.copy_from_slice(&data_2);
 
-                let cb_decrypted: usize = decrypt_prx_out_place(&mut data_1, Some(&seed)).unwrap();
+                let cb_decrypted: usize = decrypt_prx_out_place(&mut data_2, &mut data_1, Some(&seed)).unwrap();
 
 
                 if cb_decrypted > 0 {
