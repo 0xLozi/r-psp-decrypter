@@ -6,7 +6,7 @@ use crate::common::write_file;
 use crate::{PsarContext, PspError, SIZE_A};
 use crate::prx_types::decrypt_prx;
 use crate::kirk7;
-use crate::psp_decrypt_lib::psp_decrypt_table;
+use crate::psp_decrypt_lib::{psp_decrypt_table, psp_decompress};
 
 const DATA_SIZE: usize = 3000000;
 use flate2::bufread::ZlibDecoder;
@@ -51,17 +51,21 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
         return Err(PspError::ValidationFailed);
     }
 
+    // Creation of 2 custom buffers
     let mut data_1: [u8; DATA_SIZE] = [0u8; DATA_SIZE];
     let mut data_2: [u8; DATA_SIZE] = [0u8; DATA_SIZE];
 
     println!("PSAR Version: {}", ctx.psar_version);
 
+    // init psp
     psp_psar_init(data_psar, &mut data_1, &mut data_2, ctx)?;
+
 
     // I do "try_into()" because I know that this'll work
     let int_version = get_version(&data_1[0x10..0x14].try_into().unwrap())?;
     println!("{}", int_version);
     
+
     // Check PBP_NOTES.md section {### table_modes} In order to understand why we do this
     if int_version >= 380 && int_version < 400 {
         ctx.table_mode = 1;
@@ -91,6 +95,7 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
 
     // I'm not decided wether use a "loop" or a "while-loop". I still don't know which one's better, so Imma just leave it like there
     loop {
+        // Creation of vars
         let mut log_str: String = String::new();
         let mut name = [0u8; 128];
 
@@ -122,7 +127,6 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
 
         // This'll mimic if res < 0
         if res == false {
-            println!("There are no more files OR Error whhen decrypting PSAR Block!!!");
             break;
         }
 
@@ -153,7 +157,6 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
             }
         }
         else if &name[..4] == b"com:" && ctx.g_tables[0].len() > 0 {
-            // if (!FindTablePath(g_tables[0].data(), g_tables[0].size(), name+4, name))
             let mut result_name: [u8;128] = [0u8;128];
 
             if !(find_table_path(&ctx.g_tables[0], ctx.g_tables[0].len(), &name[4..], &mut result_name)) {
@@ -178,22 +181,11 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
             }
         }
 
-        let c_str = CStr::from_bytes_until_nul(&result_name).unwrap();
-        let log_string = "'{c_str}'";
-
-        // const char* szFileBase = strrchr(name, '/'); -> This means chr = character, r = reverse, str = string => string reverse character search -> in order to mimic this we have to iter but backwards
-        // This could be Some(result) or None...
-        // let slash = name.iter().rposition(|&b| b == b'/');
-
-        // if let Some(index) = slash {
-        //     sz_file_base += 1;
-
-        // }
-        // Ok my decisiton is this one: I'm gonna store the slice 
-        let sz_file_name = if let Some(index) = name.iter().rposition(|&b| b == b'/') {
-            &name[index+1..];
+        let sz_file_base: &[u8] = 
+        if let Some(index) = name.iter().rposition(|&b| b == b'/') {
+            &name[index+1..]
         } else {
-            b"err.err";
+            b"err.err"
         };
 
         let mut sz_data_path = String::new();
@@ -203,25 +195,24 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
         let end = name.iter().position(|&b| b == 0).unwrap();
         let suffix = std::str::from_utf8(&name[8..end]).unwrap();
 
+        let name_str = CStr::
+            from_bytes_until_nul(&name)
+            .map_err(|_| PspError::StringRepresentation)?
+            .to_str()
+            .unwrap();
+
         if &name[..8] == b"flash0:/" {
-            // sz_data_path = out_dir + b"/F0/" + (name+8);
             // to_owned since out_dir is &str
             sz_data_path = out_dir.to_owned() + "/F0/" + suffix;
-            found = 1;
             std::fs::create_dir_all(&sz_data_path)?;
+            found = 1;
         } else if &name[..8] == b"flash1:/" {
             sz_data_path = out_dir.to_owned() + "/F1/" + suffix;
             found = 1;
             std::fs::create_dir_all(&sz_data_path)?;
         } else {
-            // for (auto &tableName : g_tableFilenames)
-            let name_as_cstr = CStr::from_bytes_until_nul(&name)
-            .map_err(|_| PspError::StringRepresentation)?;
-            let name_as_str = name_as_cstr.to_str().unwrap();
-
             for table_name in G_TABLE_FILENAMES {
-                // AHG I CAN'T COMPARE Cstr with str FOR GOD'S SAKE
-                if name_as_str == table_name.0 {
+                if name_str == table_name.0 {
                     let size = psp_decrypt_table(&mut data_2, &mut data_1, cb_expanded, ctx.psar_version, ctx.table_mode);
                     let index: usize = table_name.1 as usize;
                     ctx.g_tables[index].resize(size, 0);
@@ -242,11 +233,7 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
         }
 
         if found == 0 {
-            let name_as_cstr = CStr::from_bytes_until_nul(&name)
-            .map_err(|_| PspError::StringRepresentation)?;
-            let name_as_str = name_as_cstr.to_str().unwrap();
-            let filename = name_as_cstr.to_str().unwrap().rsplit('/').next().unwrap_or(name_as_str);
-
+            let filename = name_str.rsplit('/').next().unwrap_or(name_str);
             sz_data_path = out_dir.to_owned() + "/PSARDUMPER/" + filename;
         }
 
@@ -257,16 +244,16 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
         // First: decrypt_prx in this context it doesn't do an in-place decryption... It stores the result in data_1. And if I call decrypt_prx, I might replace data from data_2 that can be useful in the near future. However now that I think of it: I can copy data_2 into data_1 and only send data_1 while doing decrypt_prx... Let's try that
         if cb_expanded > 0 {
             log_str += "expanded";
-            // If we don't decrypt modules, or for non-encrypted models
 
+            // If we don't decrypt modules, or for non-encrypted models
             if extract_only || data_2[..4] == *b"~PSP" {
+                // Here we check if the ipl file is not a kirk1, which means it needs predecryption
                 if !extract_only && 
                     name.starts_with(b"ipl:") && 
                     u32::from_le_bytes(data_2[0x60..0x60+4].try_into().unwrap()) != 1u32 && 
                     u32::from_le_bytes(data_2[0x60..0x60+4].try_into().unwrap()) != 0x10001 
                 {
                     data_1 = data_2;
-
 
                     let mut key_array = [0u8;16];
                     let usize_bytes = cb_expanded.to_le_bytes();
@@ -282,86 +269,102 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
                     }
                 }
 
-                if write_file(&sz_data_path, &data_2).is_err() {
+                if write_file(&sz_data_path, &data_2, cb_expanded).is_err() {
                     println!("Cannot write {}", sz_data_path);
                     break;
                 }
                 log_str.push_str(", saved");
 
-                // if (CheckExtractReboot(name, data2, cbExpanded, data1, data2, outdir, extractOnly, logStr) < 0) {
-                //     logStr += ",error extracting/decrypting reboot.bin";
-                // }
-                // Wtf is this? Oh yeah it's a function inside PsarDecrypter
-                // if check_extract_reboot(&name, pb_to_save, cb_to_save, &data_1, &data_2, out_dir, extract_only, &log_str) < 0{
-                //     log_str += ", error extracting/decrypting reboot.bin";
-                // }
+                // let's make a slight patch for testing
+                let pb_to_save = data_2.clone();
 
+                if check_extract_reboot (
+                    &name, 
+                    // before it was &data_2
+                    &pb_to_save, 
+                    cb_expanded.try_into().unwrap(), 
+                    &mut data_1, 
+                    &mut data_2, 
+                    out_dir, 
+                    extract_only, 
+                    &mut log_str
+                ) < 0 {
+                    log_str.push_str(", error extracting/decrypting reboot.bin");
+                }
             }
 
             // For encrypted ~PSP Modules, or ME images, if decrypting is not disabled
             if data_2[..4] == *b"~PSP" || name[..b"flash0:/kd/resource/me".len()] == *b"flash0:/kd/resource/me" && !extract_only{
-                data_1.copy_from_slice(&data_2);
-                let mut seed = [0u8;16];
-                let cb_bytes = (cb_expanded as u32).to_le_bytes();
+                // I don't understand why i did this in the first place...
+                // data_1.copy_from_slice(&data_2);
+                // let mut seed = [0u8;16];
+                // let cb_bytes = (cb_expanded as u32).to_le_bytes();
+                // seed[..4].copy_from_slice(&cb_bytes);
+               
 
-                seed[..4].copy_from_slice(&cb_bytes);
-                let cb_decrypted: usize = decrypt_prx(&mut data_1, Some(&seed)).unwrap();
+                data_1.copy_from_slice(&data_2);
+
+                let cb_decrypted: usize = decrypt_prx_out_place(&mut data_1, Some(&seed)).unwrap();
+
 
                 if cb_decrypted > 0 {
-                    let pb_to_save = &data_1;
-                    let cb_to_save = cb_decrypted;
+                    let mut pb_to_save: &mut [u8] = &mut data_1;
+                    let cb_to_save: u32 = cb_decrypted as u32;
+
+
+
+
+
+
 
                     log_str += ", decrypted";
                     let end_ptr: &[u8];
                     let cb_remain = 0;
 
                     if data_1[0] == 0x1F && data_1[1] == 0x8B || data_1[..4] == *b"23LZ" || data_1[..4] == *b"KL4E" {
-                        // let cb_exp = psp_decompress(data_1, cb_to_save, data_2, 3000000, log_str, &end_ptr);
+
+                        let cb_exp = psp_decompress (
+                            &data_1, 
+                            cb_to_save as u32, 
+                            &mut data_2, 
+                            3000000, 
+                            &mut log_str, 
+                            // None since I don't really need an endpointer for safety purposes and because I already make sure that the decompression is made entirely without remainders
+                            None,
+                        );
+                        // I don't really need this
                         // cb_remain = data_1 + cb_to_save - end_ptr;
-                        // if cb_exp > 0 {
-                        //     log_str += ", expanded";
-                        //     pb_to_save = data_2;
-                        //     cb_to_sabe = cb_exp;
-                        // }
-                        // else {
-                        //     log_str += ", error decompressing";
-                        // }
+
+                        if cb_exp > 0 {
+                            log_str += ",expanded";
+                            pb_to_save = &data_2;
+                            cb_to_save = cb_exp as usize;
+                        } else {
+                            log_str.push_str(", error decompressing");
+                        }
                     }
-    
-
-
-
-                    // u8* pbToSave = data1;
-                    // int cbToSave = cbDecrypted;
-
-                    // logStr += ",decrypted";
-                    // u8 *endPtr;
-                    // int cbRemain = 0;
-
-                    // if ((data1[0] == 0x1F && data1[1] == 0x8B) ||
-                    //     memcmp(data1, "2RLZ", 4) == 0 || memcmp(data1, "KL4E", 4) == 0)
-                    // {
-                    //     int cbExp = pspDecompress(data1, cbToSave, data2, 3000000, logStr, &endPtr);
-                    //     cbRemain = data1 + cbToSave - endPtr;
-
-                    //     if (cbExp > 0)
-                    //     {
-                    //         logStr += ",expanded";
-                    //         pbToSave = data2;
-                    //         cbToSave = cbExp;
-                    //     }
-                    //     else
-                    //     {
-                    //         logStr += ",error decompressing";
-                    //     }
                 }
 
-                // need import write file
-                if write_file(&sz_data_path, &data_2).unwrap() != cb_expanded {
+                if write_file(&sz_data_path, pb_to_save, cb_to_save).unwrap() != cb_expanded {
                     println!("Cannot write {}", sz_data_path);
                     break;
                 }
                 log_str += ", saved!!!";
+
+    // fn check_extract_reboot(name: &[u8], pb_to_save: &[u8], cb_to_save: u32, data_1: &mut [u8], data_2: &mut [u8], out_dir: &str, extract_only: bool, log_str: &mut String) -> i32 {
+                // Fix this
+                if check_extract_reboot(
+                    &name, 
+                    pb_to_save, 
+                    cb_to_save as u32, 
+                    &mut data_1, 
+                    &mut data_2, 
+                    out_dir, 
+                    extract_only, 
+                    &mut log_str
+                ) < 0 {
+                    log_str.push_str(",error extracting/decrypting reboot.bin"); 
+                }
                 
                 // if check_extract_reboot(&name, pb_to_save, cb_to_save, &mut data_1, &mut data_2, out_dir, extract_only, &mut log_str) < 0 {
                 //     log_str += ", error extracting/decrypting reboot.bin"
@@ -867,8 +870,6 @@ fn extract_reboot(load_exec_data: &[u8], reboot: &[u8], reboot_name: &[u8], data
     *log_str += " Extracting "; 
     *log_str += name_str;
 
-    // I don't have this...
-    // let s = find_reboot()
     let s = find_reboot(data_1, data_2);
     if s <= 0 {
         // unsecure but IM STRONGLY SURE THAT THIS IS CORRECT.... I think
@@ -876,11 +877,17 @@ fn extract_reboot(load_exec_data: &[u8], reboot: &[u8], reboot_name: &[u8], data
         println!("Cannot find {} inside loadexec. \n", name_cstr.to_str().unwrap());
     }
 
+    let Ok(reboot_cstr) = CStr::from_bytes_until_nul(&reboot) else {
+        return -1;
+    };
+    let reboot_str = reboot_cstr.to_str().unwrap();
+
     if extract_only {
-        // if write_file(reboot, data_2, s) != s {
-        //     println!("Cannot write {} \n", reboot);
-        // }
-        // log_str += ", saved!";
+        if write_file(reboot_str, data_2, s as usize).unwrap() != s as usize {
+            println!("Cannot write {reboot_str}");
+            return -1;
+        }
+
         return 0;
     }
 
@@ -894,14 +901,26 @@ fn extract_reboot(load_exec_data: &[u8], reboot: &[u8], reboot_name: &[u8], data
     }
     log_str.push_str(", decrypted");
 
-    let Ok(reboot_cstr) = CStr::from_bytes_until_nul(&reboot) else {
-        return -1;
-    };
-    let reboot_str = reboot_cstr.to_str().unwrap();
-    write_file(reboot_str, data_1);
+    let _ = write_file(reboot_str, data_1, s as usize);
 
-    // I don't have this function
-    // s = psp_decompress();
+    let s = psp_decompress(
+        data_1, 
+        DATA_SIZE as u32, 
+        data_2, 
+        DATA_SIZE as u32, 
+        log_str,
+        None
+    );
+    if s <= 0 {
+        println!("Cannot decompress {reboot_str}, {s:08X}");
+    }
+
+    if write_file(reboot_str, data_2, s as usize).unwrap() != s as usize {
+        println!("Cannot write {reboot_str}. \n");
+        return -1;
+    }
+
+    *log_str += ", done.";
 
     0
 }

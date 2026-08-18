@@ -104,7 +104,7 @@ fn decrypt_t(buf2: &mut [u8], size: usize, mode: usize) {
 
 ////// DECOMPRESSIOOOOOOOOOOOON /////
 // Here inbuff_end was a &&[u8], but since it's an immutable pointer, I can't change where the decompression stopped and that stuff because of lifetime issues. Therefore I'm gonna change this and change inbuf_end into an i32
-fn psp_decompress(inbuf: &[u8], in_size: u32, outbuf: &mut [u8], out_capacity: u32, log_str: &mut String, inbuf_end: Option<&mut u32>) -> i8 {
+pub fn psp_decompress(inbuf: &[u8], in_size: u32, outbuf: &mut [u8], out_capacity: u32, log_str: &mut String, inbuf_end: Option<&mut u32>) -> i32 {
     let mut ret_size: i32 = 0; // idk
 
     if inbuf.len() < 2 {
@@ -131,30 +131,45 @@ fn psp_decompress(inbuf: &[u8], in_size: u32, outbuf: &mut [u8], out_capacity: u
         let in_end_ptr: *mut c_void = std::ptr::null_mut();
 
         ret_size = unsafe {
-            // outbuf, out_capacity, inbuf+4, inbufEnd
-            // types inside c:
-            // outbuf: *u8
-            // out_capacity: u32
-            // inbuf: *u8
-            // inbuf_end: u8 **
             LZRDecompress (
                 outbuf.as_mut_ptr() as *mut c_void,
                 out_capacity,
-                inbuf.as_ptr() as *mut c_void,
+                // this is wrong...
+                inbuf[4..].as_ptr() as *mut c_void,
                 in_end_ptr,
             )
         };
 
         *log_str += ",lzrc";
     } else if inbuf[..4] == *b"KL4E"{
-
-
+        let mut in_end_ptr: *mut c_void = std::ptr::null_mut();
+        ret_size = unsafe {
+            decompress_kle (
+                outbuf.as_mut_ptr(),
+                out_capacity as i32,
+                inbuf[4..].as_ptr() as *mut u8,
+                &mut in_end_ptr,
+                1,
+            )
+        };
+        *log_str += "kl4e,"
+    } else if inbuf[..4] == *b"KL3E" {
+        let mut in_end_ptr: *mut c_void = std::ptr::null_mut();
+        ret_size = unsafe {
+            decompress_kle (
+                outbuf.as_mut_ptr(), 
+                out_capacity as i32, 
+                inbuf[4..].as_ptr() as *mut u8, 
+                &mut in_end_ptr, 
+                0
+            )
+        };
+        *log_str += "kl3e,";
+    } else {
+        ret_size = -1;
     }
 
-    println!("{}", ret_size);
-
-    0
-
+    ret_size
 }
 
 

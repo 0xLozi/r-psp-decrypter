@@ -4,11 +4,11 @@ use zlib_rs::{Deflate, Inflate, InflateFlush, Status};
 
 use flate2::bufread::{GzDecoder, ZlibDecoder};
 
-pub fn write_file(file_name: &str, buf: &[u8]) -> std::io::Result<usize> {
+pub fn write_file(file_name: &str, buf: &[u8], size: usize) -> std::io::Result<usize> {
     let mut file = File::create(file_name)?;
     // Explanation of why write_all() at reverse_engineering_notes.md
-    file.write_all(buf)?;
-    Ok(buf.len())
+    file.write_all(&buf[..size])?;
+    Ok(size)
 }
 
 // The old C caller may provide a buffer which his physical size is larger than the amount of data that this particular decompression operation is supposed to consume. So just in case I also add in_size and out_size as a parameter rather than using the fat_pointer size that is beign store inside him
