@@ -11,3 +11,17 @@ encrypted data -> Decrypt -> Store -> same buffer
 
 out_place decryption:
 input buffer -> encrypted data -> decrypt -> store -> output buffer
+
+// FIX PSP_DECYRPT_TYPE0
+    // fix this
+    psp_decrypt_type0(inbuf, outbuf)
+        .or_else(|_| psp_decrypt_type1(inbuf, outbuf))
+        .or_else(|_| psp_decrypt_type2(inbuf, outbuf))
+        .or_else(|_| {
+            // Si llega hasta acá y es Type 5, exige la seed que le pasó el main
+            let actual_seed = seed.ok_or(PspError::MissingSeed)?;
+            psp_decrypt_type5(inbuf, outbuf, actual_seed)
+        })
+
+# Next to-do
+Line 344 from psar_decrypter.rs. I have to look scopes of certains parts of the code itself, I already moved inside the switch statement called "if cb_decrypted > 0" the write file routine. I think I have to do the same with check_extract_reboot. But for my future self: Review it!!!

@@ -436,7 +436,7 @@ impl PrxType6 {
 }
 
 
-pub fn psp_decrypt_type0(inbuf: &mut [u8]) -> Result<usize, PspError> {
+pub fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
 
     let decrypt_size = u32::from_le_bytes(
         inbuf[0xB0..0xB4]
@@ -491,11 +491,19 @@ pub fn psp_decrypt_type0(inbuf: &mut [u8]) -> Result<usize, PspError> {
     kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
     .map_err(|_| PspError::DecryptionFailed)?;
 
+    if let Some(out) = outbuf {
+        if out.len() < size {
+            return Err(PspError::SizeError);
+        }
+
+        out[..size].copy_from_slice(payload);
+    }
+
     Ok(size)
 
 }
 
-pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
+pub fn psp_decrypt_type1(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
     let decrypt_size = u32::from_le_bytes(
         inbuf[0xB0..0xB4]
         .try_into().map_err(|_| PspError::SizeError)?
@@ -586,11 +594,19 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8]) -> Result<usize, PspError> {
     kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
         .map_err(|_| PspError::DecryptionFailed)?;
 
+    if let Some(out) = outbuf {
+        if out.len() < real_size {
+            return Err(PspError::SizeError);
+        }
+
+        out[..real_size].copy_from_slice(payload);
+    }
+
     Ok(real_size)
 }
 
 
-pub fn psp_decrypt_type2(inbuf: &mut [u8]) -> Result<usize, PspError> {
+pub fn psp_decrypt_type2(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
     // First we have to search into get_tag_2
     // Tag offset is the same as type 1
     let tag_offset = u32::from_le_bytes(
@@ -677,11 +693,19 @@ pub fn psp_decrypt_type2(inbuf: &mut [u8]) -> Result<usize, PspError> {
     kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
         .map_err(|_| PspError::DecryptionFailed)?;
 
+    if let Some(out) = outbuf {
+        if out.len() < real_size {
+            return Err(PspError::SizeError);
+        }
+
+        out[..real_size].copy_from_slice(payload);
+    }
+
     Ok(real_size)   
 }
 
 
-pub fn psp_decrypt_type5(inbuf: &mut [u8], external_seed: &[u8;16]) -> Result<usize, PspError> {
+pub fn psp_decrypt_type5(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, external_seed: &[u8;16]) -> Result<usize, PspError> {
     let tag_offset = u32::from_le_bytes(
         inbuf[0xD0..0xD4]
         .try_into()
@@ -753,6 +777,14 @@ pub fn psp_decrypt_type5(inbuf: &mut [u8], external_seed: &[u8;16]) -> Result<us
     kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
         .map_err(|_| PspError::DecryptionFailed)?;
 
+    if let Some(out) = outbuf {
+        if out.len() < real_size {
+            return Err(PspError::SizeError);
+        }
+
+        out[..real_size].copy_from_slice(payload);
+    }
+
     Ok(real_size)   
 }
 
@@ -817,7 +849,8 @@ pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) ->
 
 // ESTA VA A SER LA ÚNICA FUNCIÓN PÚBLICA. 
 // TO-DO: FINALIZADA LA FUNCIÓN. PONER TODO EL PRIVADO
-pub fn decrypt_prx(inbuf: &mut [u8], seed: Option<&[u8; 16]>) -> Result<usize, PspError>{
+// Inside "design_architectures.md" I explain why outbuf is a mutable reference of Option that contains a mutable reference of a slice of bytes
+pub fn decrypt_prx(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, seed: &mut Option<&[u8; 16]>) -> Result<usize, PspError>{
     let tag = u32::from_le_bytes(
         inbuf[0xD0..0xD0+4]
         .try_into().map_err(|_| PspError::PointerError)?
@@ -825,14 +858,25 @@ pub fn decrypt_prx(inbuf: &mut [u8], seed: Option<&[u8; 16]>) -> Result<usize, P
 
     println!("Tag detectado: 0x{:08X}", tag);
     // Usamos or_else para que si uno funciona, frene y no ejecute el resto.
-    psp_decrypt_type0(inbuf)
-        .or_else(|_| psp_decrypt_type1(inbuf))
-        .or_else(|_| psp_decrypt_type2(inbuf))
+    // fix this
+    psp_decrypt_type0(&mut *inbuf, outbuf)
+        .or_else(|_| psp_decrypt_type1(&mut *inbuf, outbuf))
+        .or_else(|_| psp_decrypt_type2(&mut *inbuf, outbuf))
         .or_else(|_| {
-            // Si llega hasta acá y es Type 5, exige la seed que le pasó el main
+            // If it makes it all the way down here, it demands the seed
             let actual_seed = seed.ok_or(PspError::MissingSeed)?;
-            psp_decrypt_type5(inbuf, actual_seed)
+            psp_decrypt_type5(&mut *inbuf, outbuf, actual_seed)
         })
+    
+
+    // psp_decrypt_type0(inbuf, outbuf)
+    //     .or_else(|_| psp_decrypt_type1(inbuf, outbuf))
+    //     .or_else(|_| psp_decrypt_type2(inbuf, outbuf))
+    //     .or_else(|_| {
+    //         // Si llega hasta acá y es Type 5, exige la seed que le pasó el main
+    //         let actual_seed = seed.ok_or(PspError::MissingSeed)?;
+    //         psp_decrypt_type5(inbuf, outbuf, actual_seed)
+    //     })
 }
 
 

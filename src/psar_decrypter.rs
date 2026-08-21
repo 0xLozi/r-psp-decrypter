@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::Path;
-use std::io::{self, Read};
+use std::io::{self, Read, empty};
 use crate::common::write_file;
 
 use crate::{PsarContext, PspError, SIZE_A};
@@ -303,20 +303,14 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
 
                 data_1.copy_from_slice(&data_2);
 
-                let cb_decrypted: usize = decrypt_prx_out_place(&mut data_2, &mut data_1, Some(&seed)).unwrap();
-
+                let cb_decrypted: usize = decrypt_prx(&mut data_2, &mut Some(&mut data_1), &mut Some(&seed)).unwrap();
 
                 if cb_decrypted > 0 {
                     let mut pb_to_save: &mut [u8] = &mut data_1;
                     let cb_to_save: u32 = cb_decrypted as u32;
 
+                    log_str.push_str(", decrypted");
 
-
-
-
-
-
-                    log_str += ", decrypted";
                     let end_ptr: &[u8];
                     let cb_remain = 0;
 
@@ -335,70 +329,48 @@ pub fn psp_decrypt_psar(data_psar: &[u8], out_dir: &str, ctx: &mut PsarContext, 
                         // cb_remain = data_1 + cb_to_save - end_ptr;
 
                         if cb_exp > 0 {
-                            log_str += ",expanded";
-                            pb_to_save = &data_2;
-                            cb_to_save = cb_exp as usize;
+                            log_str.push_str(", expanded");
+                            pb_to_save = &mut data_2;
+                            cb_to_save = cb_exp as u32;
                         } else {
                             log_str.push_str(", error decompressing");
                         }
                     }
-                }
+                    if write_file(&sz_data_path, pb_to_save, cb_to_save as usize).unwrap() != cb_expanded {
+                        println!("Cannot write {}", sz_data_path);
+                        break;
+                    }
+                    log_str += ", saved!!!";
 
-                if write_file(&sz_data_path, pb_to_save, cb_to_save).unwrap() != cb_expanded {
-                    println!("Cannot write {}", sz_data_path);
-                    break;
+                    if check_extract_reboot (
+                        &name, 
+                        pb_to_save, 
+                        cb_to_save as u32, 
+                        &mut data_1, 
+                        &mut data_2, 
+                        out_dir, 
+                        extract_only, 
+                        &mut log_str
+                    ) < 0 {
+                        log_str.push_str(",error extracting/decrypting reboot.bin"); 
+                    }
                 }
-                log_str += ", saved!!!";
-
-    // fn check_extract_reboot(name: &[u8], pb_to_save: &[u8], cb_to_save: u32, data_1: &mut [u8], data_2: &mut [u8], out_dir: &str, extract_only: bool, log_str: &mut String) -> i32 {
-                // Fix this
-                if check_extract_reboot(
-                    &name, 
-                    pb_to_save, 
-                    cb_to_save as u32, 
-                    &mut data_1, 
-                    &mut data_2, 
-                    out_dir, 
-                    extract_only, 
-                    &mut log_str
-                ) < 0 {
-                    log_str.push_str(",error extracting/decrypting reboot.bin"); 
+                else {
+                    let tag_str = u32::from_le_bytes(data_2[0xD0..0xD0+4].try_into().unwrap());
+                    let tag_str_formatted = format!("{:08}", tag_str);
+                    log_str += &(", error during decryption [tag ".to_owned() + &tag_str_formatted + "].");
                 }
-                
-                // if check_extract_reboot(&name, pb_to_save, cb_to_save, &mut data_1, &mut data_2, out_dir, extract_only, &mut log_str) < 0 {
-                //     log_str += ", error extracting/decrypting reboot.bin"
-                // }
-
-                // I don't think I need it this...
-                // if (cbRemain > 0) {
-                //     u8 *endPtr2;
-                //     logStr += "Has part2";
-                //     int cbExp = pspDecompress(endPtr, cbRemain, data2, 3000000, logStr, &endPtr2);
-                //     if (cbExp > 0) {
-                //         logStr += ",decompressed,saved!";
-                //         if (endPtr + cbRemain - endPtr2 != 0) {
-                //             logStr += "Error: garbage at end.";
-                //         }
-                //         if (WriteFile((szDataPath + ".2").c_str(), data2, cbExp) != cbExp)
-                //         {
-                //             printf("Error writing %s.\n", (szDataPath + ".2").c_str());
-                //         }
-                //     } else {
-                //         logStr += ",error decompressing!";
-                //     }
-                // }
             }
-            else {
-                let tag_str = u32::from_le_bytes(data_2[0xD0..0xD0+4].try_into().unwrap());
-                let tag_str_formatted = format!("{:08}", tag_str);
-                log_str += &(", error during decryption [tag ".to_owned() + &tag_str_formatted + "].");
+
+            else if name[..4] == *b"ipl:" && !extract_only {
+                decrypt_ipl(data_2, cb_expanded, int_version, sz_file_base, out_dir + "/PSARDUMPER", preipl, preipl_size, verbose, keep_all, log_str);
             }
         }
-        //testing
-        else if (5 > 0) {
-
+        else {
+            log_str.push_str("empty");
         }
     }
+    println!("Done!\n");
 
     Ok(())
 }
