@@ -9,7 +9,7 @@ use des::Des;
 use cbc::Decryptor;
 use des::cipher::block_padding::NoPadding;
 use crate::common::gunzip;
-use std::ffi::c_void;
+use std::{ffi::c_void, intrinsics::bitreverse};
 
 // The des crate automatically includes the cipher rulebook
 // This gives Decryptor the ability to use .new()
@@ -173,3 +173,108 @@ pub fn psp_decompress(inbuf: &[u8], in_size: u32, outbuf: &mut [u8], out_capacit
 }
 
 
+//// HERE IS FOR IPL DECRYTPION ////
+pub fn decrypt_ipl(in_data: &[u8], in_data_size: usize, version: u32, filename: &[u8], outdir: &mut String, pre_ipl: &[u8], pre_ipl_size: usize, verbose: bool, keep_all: bool, log_str: &mut String) -> i32 {
+    // Ok so the easy way to create a dynamically-sized Vec with a specific initial length is to use the vec! macro!!!!
+    let tmp_data = vec![0u8;in_data_size];
+
+    // kirk_init()
+    let cb1: i32 = psp_decrypt_ipl1(in_data, tmp_data, in_data_size, &mut log_str);
+
+    if cb1 > 0 {
+        println!("Something");
+    }
+
+    32
+}
+
+// Here the IPL Decryption
+pub fn psp_decrypt_ipl1(pb_in: &[u8], pb_out: &[u8], cb_in: u32, log_str: &mut [u8]) -> i32 {
+    let cb_out: u32 = 0;
+    let xor_key_idx = -1;
+
+    while cb_in >= 0x1000 {
+        if pb_in[0x62] == 1 {
+            let mut dec_data = [0u8;0x1000];
+
+            dec_data.copy_from_slice(&pb_in[..0x1000]);
+
+            dec_data[0x62] = 0;
+            
+            if xor_key_idx == -1 {
+                for i in 0..0x7E0 {
+                    // inside the original one, they send an u32 pointer casted, therefore it jumps 4 bytes per 4, not 1: u32 pointer to be precise. But this is highly risky, therefore I'm dealing with a solution to this manner
+                    // let's see the options:
+                    // 1. Create an u32 mutable pointer pointing into dec_data and pray that'll work
+                    // 2. Do a conversion of the original descamble and convert it into an u8 function instead of a u32 one.
+                    // First, let's see if inside pspdecyrpt_lib.cpp they use more than 1 time this specific function... Ok it seems that this function is used in many occasions. Therefore point "2" is not possible.
+                    
+                    // Ok I'm about to change descramble and use u8 instead of fdoing memory reinterpretation. This Explanation inside
+                    descramble_03g(&mut dec_data, i); 
+
+                }
+            }
+
+        }
+
+    }
+    1
+}
+
+// xor keys & original descrambling code thanks to Davee and Proxima's awesome work! //
+// I think this is gonna be used for ONLY READING PURPOSES
+const xorkeys: [u32;68] = [
+    0x61A0C918, 0x45695E82, 0x9CAFD36E, 0xFA499B0F,
+    0x7E84B6E2, 0x91324D29, 0xB3522009, 0xA8BC0FAF,
+    0x48C3C1C5, 0xE4C2A9DC, 0x00012ED1, 0x57D9327C,
+    0xAFB8E4EF, 0x72489A15, 0xC6208D85, 0x06021249,
+    0x41BE16DB, 0x2BD98F2F, 0xD194BEEB, 0xD1A6E669,
+    0xC0AC336B, 0x88FF3544, 0x5E018640, 0x34318761,
+    0x5974E1D2, 0x1E55581B, 0x6F28379E, 0xA90E2587,
+    0x091CB883, 0xBDC2088A, 0x7E76219C, 0x9C4BEE1B,
+    0xDD322601, 0xBB477339, 0x6678CF47, 0xF3C1209B,
+    0x5A96E435, 0x908896FA, 0x5B2D962A, 0x7FEC378C,
+    0xE3A3B3AE, 0x8B902D93, 0xD0DF32EF, 0x6484D261,
+    0x0A84A153, 0x7EB16575, 0xB10E53DD, 0x1B222753,
+    0x58DD63D0, 0x8E8B8D48, 0x755B32C2, 0xA63DFFF7,
+    0x97CABF7C, 0x33BDC660, 0x64522286, 0x403F3698,
+    0x3406C651, 0x9F4B8FB9, 0xE284F475, 0xB9189A13,
+    0x12C6F917, 0x5DE6B7ED, 0xDB674F88, 0x06DDB96E,
+    0x2B2165A6, 0x0F920D3F, 0x732B3475, 0x1908D613
+];
+
+
+// Idea: Use Result return, and then add a conditional that checks if data.len() is higher than 16 and other conditionals that can fulfill the needs of the Rust compiler at a compile time and then I can be completely sure that this function will return something good or bad. or an error and then I can just catch that that error correctly. 
+fn descramble_03g(data: &mut [u8], i: u32) {
+    // Ok so if since id_x in order to use it as an index I have to use usize type, if the result of the math operation doesn't fit into xorkeys, it can panic. so I have to also deal with it
+    // but unwrap here is not ox
+    let id_x = ((i >> 5) & 0x3F) as usize;
+    let rot: u32 = i & 0x1F;
+    let mut x1 = xorkeys[id_x];
+    let mut x2 = xorkeys[id_x+1];
+    let mut x3 = xorkeys[id_x+2];
+    let mut x4 = xorkeys[id_x+3];
+
+    x1 = (x1 >> rot) | (x1 << (0x20-rot));
+    x2 = ((x2 >> rot) | (x2 << (0x20-rot))).reverse_bits();
+    x3 = (x3 >> rot) | (x3 << (0x20-rot)) ^ x4;
+    x4 = (x4 >> rot) | (x4 << (0x20-rot));
+
+
+    let mut res_1 = u32::from_le_bytes(data[0..4].try_into().unwrap());
+    res_1 ^= x1;
+
+    let mut res_2 = u32::from_le_bytes(data[4..4+4].try_into().unwrap());
+    res_2 ^= x2;
+
+    let mut res_3 = u32::from_le_bytes(data[8..8+4].try_into().unwrap());
+    res_3 ^= x3;
+
+    let mut res_4 = u32::from_le_bytes(data[12..12+4].try_into().unwrap());
+    res_4 ^= x4;
+
+    data[0..4].copy_from_slice(&res_1.to_le_bytes()); 
+    data[4..8].copy_from_slice(&res_2.to_le_bytes());
+    data[8..12].copy_from_slice(&res_3.to_le_bytes());
+    data[12..14].copy_from_slice(&res_4.to_le_bytes());
+}

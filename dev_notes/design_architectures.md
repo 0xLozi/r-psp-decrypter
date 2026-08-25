@@ -25,3 +25,15 @@ Why outbuf is `&mut Option<&mut [u8]>`
 By passing `Option<&mut [u8]>` by value, this would transferr ownership of the `Option` itself into the function. Then Passin `&Option<&mut[u8]>` this only provides an immutable borrow of the `Option`, which is good for inspection but not for what we are looking for (edit the contents of the mutable fat slice that is being wrapper inside Option).
 So Passing `&mut Option<&mut [u8]>` i have access to the Option itself, and then mutable access to the output bytes.
 The important thing is that The decryptor only needs to write into the existing output buffer; it does not need to change what reference point so. Just to clarify...
+
+
+
+
+### Note regards of Memory Reinterpretation inside descramble function
+Since I know that memory reinterpretation can cause undefined behavior, I should focus more about how can I make this safe rather than using the old way that old C++ developers made back then. And this is my choice:
+Changing the function signature in order to use `&mut[u8]` So then we can do the math safely and let the Rust Compiler to optimize it!!!
+
+
+
+
+
