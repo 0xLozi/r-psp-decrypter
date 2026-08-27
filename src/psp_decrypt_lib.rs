@@ -3,13 +3,14 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
-use crate::{prx_types::decrypt_prx};
+use crate::{error_handling::errors::PspError, prx_types::decrypt_prx};
 use aes::cipher::BlockDecryptMut;
+use clap::Error;
 use des::Des;
 use cbc::Decryptor;
 use des::cipher::block_padding::NoPadding;
 use crate::common::gunzip;
-use std::{ffi::c_void, intrinsics::bitreverse};
+use std::{ffi::c_void};
 
 // The des crate automatically includes the cipher rulebook
 // This gives Decryptor the ability to use .new()
@@ -245,7 +246,12 @@ const xorkeys: [u32;68] = [
 
 
 // Idea: Use Result return, and then add a conditional that checks if data.len() is higher than 16 and other conditionals that can fulfill the needs of the Rust compiler at a compile time and then I can be completely sure that this function will return something good or bad. or an error and then I can just catch that that error correctly. 
-fn descramble_03g(data: &mut [u8], i: u32) {
+// Architecture Design in "design_architectures.md" section `descramble function`
+fn descramble_03g(data: &mut [u8], i: u32) -> Result<(), PspError> {
+    if data.len() < 16 {
+        return Err(PspError::SizeError);
+    }
+
     // Ok so if since id_x in order to use it as an index I have to use usize type, if the result of the math operation doesn't fit into xorkeys, it can panic. so I have to also deal with it
     // but unwrap here is not ox
     let id_x = ((i >> 5) & 0x3F) as usize;
@@ -255,26 +261,45 @@ fn descramble_03g(data: &mut [u8], i: u32) {
     let mut x3 = xorkeys[id_x+2];
     let mut x4 = xorkeys[id_x+3];
 
-    x1 = (x1 >> rot) | (x1 << (0x20-rot));
-    x2 = ((x2 >> rot) | (x2 << (0x20-rot))).reverse_bits();
-    x3 = (x3 >> rot) | (x3 << (0x20-rot)) ^ x4;
-    x4 = (x4 >> rot) | (x4 << (0x20-rot));
+    // x1 = (x1 >> rot) | (x1 << (0x20-rot));
+    // x2 = ((x2 >> rot) | (x2 << (0x20-rot))).reverse_bits();
+    // x3 = (x3 >> rot) | (x3 << (0x20-rot)) ^ x4;
+    // x4 = (x4 >> rot) | (x4 << (0x20-rot));
 
+    // "equal to" since rotate_right returns Self and it sends a self rather than a &mut self 
+    x1 = x1.rotate_right(rot);
+    x2 = x2.rotate_right(rot).reverse_bits();
+    x3 = x3.rotate_right(rot) ^ x4;
+    x4 = x4.rotate_right(rot);
 
-    let mut res_1 = u32::from_le_bytes(data[0..4].try_into().unwrap());
-    res_1 ^= x1;
+    let keys = [x1, x2, x3, x4];
 
-    let mut res_2 = u32::from_le_bytes(data[4..4+4].try_into().unwrap());
-    res_2 ^= x2;
+    // .zip() acts as like clean package-maker: it grabs items from both collections 
+    // and then hands them to the loop perfectly paired, so we don't need 'i' indexes!!!!
+    // we use chunks with size 4 since that's what the original tool does: copy using 4 bytes length
+    for (chunk, &key) in data[0..16].chunks_exact_mut(4).zip(keys.iter()) {
+        // First we convert the chunk into an u32
+        // we can do unwrap since this is mathematically correct thanks to the range we are using
+        let mut res = u32::from_le_bytes(chunk.try_into().unwrap());
+        res ^= key;
+        chunk.copy_from_slice(&res.to_le_bytes());
+    }
 
-    let mut res_3 = u32::from_le_bytes(data[8..8+4].try_into().unwrap());
-    res_3 ^= x3;
+    // let mut res_1 = u32::from_le_bytes(data[0..4].try_into().unwrap());
+    // res_1 ^= x1;
 
-    let mut res_4 = u32::from_le_bytes(data[12..12+4].try_into().unwrap());
-    res_4 ^= x4;
+    // let mut res_2 = u32::from_le_bytes(data[4..4+4].try_into().unwrap());
+    // res_2 ^= x2;
 
-    data[0..4].copy_from_slice(&res_1.to_le_bytes()); 
-    data[4..8].copy_from_slice(&res_2.to_le_bytes());
-    data[8..12].copy_from_slice(&res_3.to_le_bytes());
-    data[12..14].copy_from_slice(&res_4.to_le_bytes());
+    // let mut res_3 = u32::from_le_bytes(data[8..8+4].try_into().unwrap());
+    // res_3 ^= x3;
+
+    // let mut res_4 = u32::from_le_bytes(data[12..12+4].try_into().unwrap());
+    // res_4 ^= x4;
+
+    // data[0..4].copy_from_slice(&res_1.to_le_bytes()); 
+    // data[4..8].copy_from_slice(&res_2.to_le_bytes());
+    // data[8..12].copy_from_slice(&res_3.to_le_bytes());
+    // data[12..16].copy_from_slice(&res_4.to_le_bytes());
+    Ok(())
 }

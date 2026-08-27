@@ -26,12 +26,23 @@ By passing `Option<&mut [u8]>` by value, this would transferr ownership of the `
 So Passing `&mut Option<&mut [u8]>` i have access to the Option itself, and then mutable access to the output bytes.
 The important thing is that The decryptor only needs to write into the existing output buffer; it does not need to change what reference point so. Just to clarify...
 
-
-
-
-### Note regards of Memory Reinterpretation inside descramble function
+## Note regards of Memory Reinterpretation inside descramble function
 Since I know that memory reinterpretation can cause undefined behavior, I should focus more about how can I make this safe rather than using the old way that old C++ developers made back then. And this is my choice:
 Changing the function signature in order to use `&mut[u8]` So then we can do the math safely and let the Rust Compiler to optimize it!!!
+
+### Another thing which is important
+The original C++ PSP decryption algorithm (Specially this one: `x1 = (x1 >> rot) | (x1 << (0x20-rot))`) rotates 32-bit integeres circularly in order to ensuere no cryptographic data is lost. So because C/C++ lacks of a native approach (rotation operator), devs had to simulate it by using this: (x >> rot) | (x << (0x20 - rot)) -> Which performs a right shift operation and in order to not lost those bits that were fall of the right edge they perform a shift operation in order to recover those bits and do an OR operation to rotate them "circularly".
+#### A better explanation here:
+- The right shift (>> rot): Pushes the bits to the right. And normally, bits falling of the edge (which in this case, is the right one) are permanently destroyed.
+- The left shift (<< 0x20 - rot): It "rescues" those bits by taking an un-edited data and moves it left by the exact offset needed in order to plase those falling bits into the Most Significant Bit (The far one left) positions.
+- Bitwise OR (|), unifies those 2 chain bits together in order to complete the 32-bit circle!!!
+
+#### Rust Refactor
+I replaces this bitwise formula by only using the Rust's native .rotate_right(rot) method.
+
+#### Justification
+- The rust method explains better the goal (circular rotation) rather than forcing future maintainers of this project to mentally decode wtf I'm doing and do algebra.
+- By eliminating the hardcoded 0x20 and math operators y remove the risk of typos, or alignment bugs!!!
 
 
 
