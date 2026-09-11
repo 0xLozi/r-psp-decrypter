@@ -189,8 +189,8 @@ pub fn decrypt_ipl(in_data: &[u8], in_data_size: usize, version: u32, filename: 
     32
 }
 
-// Here the IPL Decryption
-pub fn psp_decrypt_ipl1(pb_in: &[u8], pb_out: &[u8], cb_in: u32, log_str: &mut [u8]) -> i32 {
+// Here the IPL Decryptiow
+pub fn psp_decrypt_ipl1(pb_in: &[u8], pb_out: &[u8], cb_in: u32, log_str: &mut [u8]) -> Result<(), PspError> {
     let cb_out: u32 = 0;
     let xor_key_idx = -1;
 
@@ -211,15 +211,23 @@ pub fn psp_decrypt_ipl1(pb_in: &[u8], pb_out: &[u8], cb_in: u32, log_str: &mut [
                     // First, let's see if inside pspdecyrpt_lib.cpp they use more than 1 time this specific function... Ok it seems that this function is used in many occasions. Therefore point "2" is not possible.
                     
                     // Ok I'm about to change descramble and use u8 instead of fdoing memory reinterpretation. This Explanation inside
-                    descramble_03g(&mut dec_data, i); 
-
+                    descramble_03g(&mut dec_data, i)?; 
+                    let ret: u32 = kirk1block(dec_data, pb_out);
                 }
             }
 
         }
 
     }
-    1
+
+    Ok(())
+}
+
+fn kirk1block(pb_in: &[u8], pb_out: &[u8]) -> Result<(), PspError> {
+    // let g_data_tpm = [0u8;0x1040] __attribute__((aligned(0x40)));
+
+
+    Ok(())
 }
 
 // xor keys & original descrambling code thanks to Davee and Proxima's awesome work! //
@@ -245,26 +253,18 @@ const xorkeys: [u32;68] = [
 ];
 
 
-// Idea: Use Result return, and then add a conditional that checks if data.len() is higher than 16 and other conditionals that can fulfill the needs of the Rust compiler at a compile time and then I can be completely sure that this function will return something good or bad. or an error and then I can just catch that that error correctly. 
 // Architecture Design in "design_architectures.md" section `descramble function`
 fn descramble_03g(data: &mut [u8], i: u32) -> Result<(), PspError> {
     if data.len() < 16 {
         return Err(PspError::SizeError);
     }
 
-    // Ok so if since id_x in order to use it as an index I have to use usize type, if the result of the math operation doesn't fit into xorkeys, it can panic. so I have to also deal with it
-    // but unwrap here is not ox
     let id_x = ((i >> 5) & 0x3F) as usize;
     let rot: u32 = i & 0x1F;
     let mut x1 = xorkeys[id_x];
     let mut x2 = xorkeys[id_x+1];
     let mut x3 = xorkeys[id_x+2];
     let mut x4 = xorkeys[id_x+3];
-
-    // x1 = (x1 >> rot) | (x1 << (0x20-rot));
-    // x2 = ((x2 >> rot) | (x2 << (0x20-rot))).reverse_bits();
-    // x3 = (x3 >> rot) | (x3 << (0x20-rot)) ^ x4;
-    // x4 = (x4 >> rot) | (x4 << (0x20-rot));
 
     // "equal to" since rotate_right returns Self and it sends a self rather than a &mut self 
     x1 = x1.rotate_right(rot);
@@ -284,22 +284,7 @@ fn descramble_03g(data: &mut [u8], i: u32) -> Result<(), PspError> {
         res ^= key;
         chunk.copy_from_slice(&res.to_le_bytes());
     }
-
-    // let mut res_1 = u32::from_le_bytes(data[0..4].try_into().unwrap());
-    // res_1 ^= x1;
-
-    // let mut res_2 = u32::from_le_bytes(data[4..4+4].try_into().unwrap());
-    // res_2 ^= x2;
-
-    // let mut res_3 = u32::from_le_bytes(data[8..8+4].try_into().unwrap());
-    // res_3 ^= x3;
-
-    // let mut res_4 = u32::from_le_bytes(data[12..12+4].try_into().unwrap());
-    // res_4 ^= x4;
-
-    // data[0..4].copy_from_slice(&res_1.to_le_bytes()); 
-    // data[4..8].copy_from_slice(&res_2.to_le_bytes());
-    // data[8..12].copy_from_slice(&res_3.to_le_bytes());
-    // data[12..16].copy_from_slice(&res_4.to_le_bytes());
     Ok(())
 }
+
+

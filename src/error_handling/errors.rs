@@ -70,4 +70,7 @@ pub enum KirkError {
 
     #[error("The conversion failed...")]
     ConversionFailed,
+
+    #[error("This is an invalid command...")]
+    InvalidCommand,
 }
