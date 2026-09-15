@@ -1,13 +1,15 @@
 use aes::Aes128;
+use aes::cipher::{BlockEncryptMut, KeyInit};
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 use crate::error_handling::errors::{KirkError, PspError};
 use crate::kirk_lib::kirk_engine::KirkModes::{KirkModeCmd1, KirkModeCmd2, KirkModeCmd3};
-use crate::kirk_lib::kirk_headers::{self, KirkCmd1EcdsaHeader, KirkCmd1Header, header_keys, kirk_ctx};
+use crate::kirk_lib::kirk_headers::{self, KirkCmd1EcdsaHeader, KirkCmd1Header, Kirk_Aes128CBC_Header};
 use sha1::{Sha1, Digest};
 use cmac::{Cmac, Mac};
 
 // We create an alias
 type Aes128CbcDec = cbc::Decryptor<Aes128>;
+type Aes128CbcEnc = cbc::Encryptor<Aes128>;
 
 // This is for replacing kirk_engine.h
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,7 +33,9 @@ pub enum KirkCommand {
     EcdsaSign = 16,
     EcdsaVerify = 17,
 }
-#[repr(i32)]
+
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+#[repr(u32)]
 pub enum KirkReturnValues {
     KirkOperationSuccess = 0,
     KirkNotEnabled = 1,
@@ -75,15 +79,15 @@ impl KirkCtx {
         }
     }
 
-    pub fn kirk_cmd1(&self, outbuff: &mut [u8], inbuff: &[u8], size: usize) -> u32 {
+    pub fn kirk_cmd1(&self, outbuff: &mut [u8], inbuff: &[u8], size: usize) -> Result<KirkReturnValues, KirkError> {
         let header = KirkCmd1Header::new(&inbuff);
 
-        if size < 0x90 { return KirkReturnValues::KirkInvalidSize as u32; }
-        if !self.is_kirk_initialized { return KirkReturnValues::KirkNotInitialized as u32; }
+        if size < 0x90 { return Ok(KirkReturnValues::KirkInvalidSize); }
+        if !self.is_kirk_initialized { return Ok(KirkReturnValues::KirkNotInitialized);}
 
         if let Ok(mode) = header.mode() {
             if mode != KirkModes::KirkModeCmd1 as u32 {
-                return KirkReturnValues::KirkInvalidMode as u32;
+                return Ok(KirkReturnValues::KirkInvalidMode);
             }
             let iv = [0u8;16];
             let decryptor_keys = Aes128CbcDec::new(&KIRK1_KEY.into(), &iv.into());
@@ -93,7 +97,7 @@ impl KirkCtx {
             keys_buffer.copy_from_slice(&inbuff[0..32]);
 
             if decryptor_keys.decrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(&mut keys_buffer).is_err() {
-                return KirkReturnValues::KirkInvalidSize as u32;
+                return Ok(KirkReturnValues::KirkInvalidSize);
             }
             let clean_aes_key = &keys_buffer[0..16];
             let clean_cmac_key = &keys_buffer[16..32];
@@ -111,57 +115,90 @@ impl KirkCtx {
                 }
             }
         } else {
-            let ret = Self::kirk_cmd10(inbuff,size);
-            if ret != KirkReturnValues::KirkOperationSuccess as u32 {
-                return ret;
+            let ret = self.kirk_cmd10(inbuff,size).unwrap();
+            if ret != KirkReturnValues::KirkOperationSuccess {
+                return Ok(ret);
             }
         }
 
-        return KirkReturnValues::KirkOperationSuccess as u32;
+        return Ok(KirkReturnValues::KirkOperationSuccess);
     }
 
-    pub fn kirk_cmd10(&self, inbuff: &[u8], in_size: usize) -> Result<u32, KirkError> {
+    pub fn kirk_cmd4(&self, outbuff: &mut [u8], inbuff: &[u8], _size: usize) -> Result<KirkReturnValues, KirkError> {
+        let header = Kirk_Aes128CBC_Header::new(&inbuff);
+        let key: &[u8];
+    
+        if !self.is_kirk_initialized {return Ok(KirkReturnValues::KirkNotInitialized);}
+        if header.mode() != KirkModes::KirkModeEncryptCbc as u32 {return Ok(KirkReturnValues::KirkInvalidMode);}
+        if header.data_size() == 0 { return Ok(KirkReturnValues::KirkDataSizeZero);}
+
+        key = kirk_4_7_get_key(header.keyseed() as i32)?;
+
+        let iv = [0u8;16];
+        let encryptor = Aes128CbcEnc::new(key.into(), &iv.into());
+
+        encryptor.encrypt_padded_b2b_mut::<cbc::cipher::block_padding::NoPadding>(&inbuff[0x14..0x14+header.data_size() as usize], &mut outbuff[0x14..0x14 + header.data_size() as usize]);
+
+        Ok(KirkReturnValues::KirkOperationSuccess)
+    }
+
+    pub fn kirk_cmd10(&self, inbuff: &[u8], in_size: usize) -> Result<KirkReturnValues, KirkError> {
         let header = KirkCmd1Header::new(inbuff);
-        let mut keys_buffer = [0u8; 32];
 
-        let cmac_data_hash = [0u8;16];
-        // lack of cmack_key, which is an AES_ctx, But i'm gonna bind 2 lines: the one that declares the ctx, and the second one that assigns it (set_key())
-        let chk_size: u32;
+        if !self.is_kirk_initialized { return Ok(KirkReturnValues::KirkNotInitialized); }
 
-        if !self.is_kirk_initialized { return Ok(KirkReturnValues::KirkNotInitialized as u32); }
         let mode = header.mode().unwrap();
-        if !(mode == KirkModes::KirkModeCmd1 as u32) || mode == KirkModes::KirkModeCmd2 as u32 || mode == KirkModes::KirkModeCmd3 as u32 { return Ok(KirkReturnValues::KirkInvalidMode as u32) }
+        if !(mode == KirkModes::KirkModeCmd1 as u32 || mode == KirkModes::KirkModeCmd2 as u32 || mode == KirkModes::KirkModeCmd3 as u32) { 
+            return Ok(KirkReturnValues::KirkInvalidMode); 
+        }
 
-        if header.data_size().unwrap() == 0 { return Ok(KirkReturnValues::KirkDataSizeZero as u32); }
+        if header.data_size().unwrap() == 0 { return Ok(KirkReturnValues::KirkDataSizeZero); }
 
         if mode == KirkModes::KirkModeCmd1 as u32 {
             let iv = [0u8;16];
             // Here is where I'm going to bind AES_set_key & AES_ctx into one routine
             let decryptor_keys = Aes128CbcDec::new(&KIRK1_KEY.into(), &iv.into());
 
+            let mut keys_buffer = [0u8; 32];
+            keys_buffer.copy_from_slice(&inbuff[0..32]);
           
             let keys = match decryptor_keys.decrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(&mut keys_buffer) {
                 Ok(keys) => keys,
-                Err(_) => return Ok(KirkReturnValues::KirkInvalidSize as u32),
+                Err(_) => return Ok(KirkReturnValues::KirkInvalidSize),
             };
 
             // Using this for simplicitly in order to not hit my head in the future
             let keys_clean = kirk_headers::HeaderKeys::new(&keys[0..32].try_into().unwrap());
-            let mut mac = Cmac::<Aes128>::new_from_slice(&keys_clean.cmac).unwrap();
-            mac.update(&inbuff[0x60..0x60+0x30]);
 
+            let mut mac = 
+                <Cmac::<Aes128> as Mac>::new_from_slice(&keys_clean.cmac).unwrap();
+            
+            mac.update(&inbuff[0x60..0x60+0x30]);
             let cmac_header_hash: [u8;16] = mac.finalize().into_bytes().into();
 
-            // if(memcmp(cmac_header_hash, header->CMAC_header_hash, 16) != 0) return KIRK_HEADER_HASH_INVALID;
-            // if(memcmp(cmac_data_hash, header->CMAC_data_hash, 16) != 0) return KIRK_DATA_HASH_INVALID;
+            if cmac_header_hash != header.cmac_header_hash() {
+                return Ok(KirkReturnValues::KirkHeaderHashInvalid);
+            }
 
-            if cmac_header_hash == header.
+            let mut chk_size = header.data_size().unwrap() as usize;
+            if chk_size % 16 != 0 {
+                chk_size += 16 - (chk_size % 16);
+            }
 
+            let data_offset = header.data_offset().unwrap() as usize;
+            let total_hash_size = 0x30 + chk_size + data_offset;
 
+            let mut data_mac = <Cmac::<Aes128> as Mac>::new_from_slice(&keys_clean.cmac).unwrap();
+            data_mac.update(&inbuff[0x60 .. 0x60 + total_hash_size]);
+            let cmac_data_hash: [u8; 16] = data_mac.finalize().into_bytes().into();
 
+            if cmac_data_hash != header.cmac_data_hash() {
+                return Ok(KirkReturnValues::KirkDataHashInvalid);
+            }
+
+            return Ok(KirkReturnValues::KirkOperationSuccess);
         }
-
-        Ok(KirkReturnValues::KirkOperationSuccess as u32)
+        Ok(KirkReturnValues::KirkSigCheckInvalid)
     }
 }
 
@@ -393,45 +430,14 @@ pub fn kirk_cmd1_decrypt (
     Ok(())
 }
 
-// functions from sce_utils_buffer_copy_with_range
-// Im gonna regret using u32... But whatever
-// decided to make is_kirk_initialized as a ctx struct rather than a global variable, just to make it safer and more rust idiomatic
-fn kirk_cmd1(outbuff: &[u8], inbuff: &mut [u8], size: usize, ctx: kirk_ctx) -> u32 {
-    let header = KirkCmd1Header::new(&inbuff);
-    // lacking of impl
-    let keys: header_keys::new(); //0-15 AES key, 16-31 CMAC key
-    // to-do next
-    let k1: AES_ctx;
 
-    if size < 0x90 { return KirkReturnValues::KirkInvalidSize as u32; }
-    if ctx.is_kirk_initialized == 0 { return KirkReturnValues::KirkNotInitialized as u32; }
-
-    // fix this... It seems that I have to do it inside kirk ctx.... that's why
-    if let Ok(mode) = header.mode() {
-        if mode != KirkModes::KirkModeCmd1 as u32 {
-            Aes128CbcDec::decrypt_padded_mut(ctx.aes_kirk1, inbuff);
-
-            let iv = [0u8;16];
-            let payload = Aes128CbcDec::new(ctx.aes_kirk1, &iv.into());
-            payload.decrypt_padded_mut(inbuff);
-
-        }
-    } else {
-        return KirkReturnValues::KirkInvalidSize as u32;
-    }
-
-
-    2
-}
-
-
-pub fn sce_utils_buffer_copy_with_range(outbuff: &[u8], out_size: usize, inbuff: &[u8], in_size: usize, cmd: KirkCommand) -> Result<u32, KirkError> {
+pub fn sce_utils_buffer_copy_with_range(outbuff: &mut [u8], out_size: usize, inbuff: &[u8], in_size: usize, cmd: KirkCommand, kirk_ctx: KirkCtx) -> Result<KirkReturnValues, KirkError> {
     match cmd {
         KirkCommand::DecryptPrivate => {
-            return Ok(kirk_cmd1(outbuff, inbuff, in_size));
+            return Ok(kirk_ctx.kirk_cmd1(outbuff, inbuff, in_size)?);
         },
         KirkCommand::EncryptIv0 => {
-            Ok(1)
+            return Ok(kirk_ctx.kirk_cmd4(outbuff, inbuff, in_size)?);
         },
         KirkCommand::DecryptIv0 => {
             Ok(1)
@@ -463,3 +469,4 @@ pub fn sce_utils_buffer_copy_with_range(outbuff: &[u8], out_size: usize, inbuff:
         }
     }
 }
+

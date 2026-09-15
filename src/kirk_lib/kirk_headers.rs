@@ -172,6 +172,50 @@ impl KirkCmd1EcdsaHeader {
 }
 
 
+pub struct Kirk_Aes128CBC_Header {
+    data: [u8;0x14],
+}
+impl Kirk_Aes128CBC_Header {
+    pub fn new(inbuff: &[u8]) -> Self {
+        let mut data = [0u8;0x14];
+        data.copy_from_slice(&inbuff[..0x14]);
+
+        Self {
+            data
+        }
+    }
+
+    pub fn mode(&self) -> u32 {
+        u32::from_le_bytes(self.data[0..4].try_into().unwrap())
+    }
+
+    pub fn unk_4(&self) -> u32 {
+        u32::from_le_bytes(self.data[4..8].try_into().unwrap())
+    }
+
+    pub fn unk_8(&self) -> u32 {
+        u32::from_le_bytes(self.data[8..0xC].try_into().unwrap())
+    }
+
+    pub fn keyseed(&self) -> u32 {
+        u32::from_le_bytes(self.data[0xC..0x10].try_into().unwrap())
+
+    }
+
+    pub fn data_size(&self) -> u32 {
+        u32::from_le_bytes(self.data[0x10..0x14].try_into().unwrap())
+
+    }
+
+}
+
+
+
+
+
+
+
+
 
 // inside the original tool it says this: small struct for temporary keeping AES & CMAC key from CMD1 header
 pub struct HeaderKeys {
