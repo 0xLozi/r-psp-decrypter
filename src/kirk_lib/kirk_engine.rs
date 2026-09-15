@@ -1,8 +1,9 @@
-use aes::Aes128;
+use aes::{Aes128, cipher};
 use aes::cipher::{BlockEncryptMut, KeyInit};
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 use crate::error_handling::errors::{KirkError, PspError};
-use crate::kirk_lib::kirk_engine::KirkModes::{KirkModeCmd1, KirkModeCmd2, KirkModeCmd3};
+use crate::kirk_lib::kirk_engine::KirkModes::{KirkModeCmd1, KirkModeCmd2, KirkModeCmd3, KirkModeDecryptCbc};
+use crate::kirk_lib::kirk_engine::KirkReturnValues::KirkInvalidMode;
 use crate::kirk_lib::kirk_headers::{self, KirkCmd1EcdsaHeader, KirkCmd1Header, Kirk_Aes128CBC_Header};
 use sha1::{Sha1, Digest};
 use cmac::{Cmac, Mac};
@@ -137,7 +138,33 @@ impl KirkCtx {
         let iv = [0u8;16];
         let encryptor = Aes128CbcEnc::new(key.into(), &iv.into());
 
-        encryptor.encrypt_padded_b2b_mut::<cbc::cipher::block_padding::NoPadding>(&inbuff[0x14..0x14+header.data_size() as usize], &mut outbuff[0x14..0x14 + header.data_size() as usize]);
+        // doing b2b since we don't want an in-place encryption lmao
+        encryptor.encrypt_padded_b2b_mut::<cbc::cipher::block_padding::NoPadding>(
+            &inbuff[0x14..0x14+header.data_size() as usize], 
+            &mut outbuff[0x14..0x14 + header.data_size() as usize]
+        ).unwrap();
+
+        Ok(KirkReturnValues::KirkOperationSuccess)
+    }
+
+    pub fn kirk_cmd7(&self, outbuff: &mut [u8], inbuff: &[u8], _size: usize) -> Result<KirkReturnValues, KirkError> {
+        let header = Kirk_Aes128CBC_Header::new(&inbuff);
+        let key: &[u8];
+
+        if self.is_kirk_initialized { return Ok(KirkReturnValues::KirkNotInitialized) }
+        if header.mode() != KirkModes::KirkModeDecryptCbc as u32 { return Ok(KirkReturnValues::KirkInvalidMode) }
+        if header.data_size() == 0 { return Ok(KirkReturnValues::KirkInvalidSize) }
+
+        key = kirk_4_7_get_key(header.keyseed() as i32)?;
+        // we skip if(key == (u8*)KIRK_INVALID_SIZE) return KIRK_INVALID_SIZE; since we already deal with the resutl of kirk_4_7_get_key by doing "?"
+
+        let iv = [0u8;16];
+        let decryptor = Aes128CbcDec::new(key.into(), &iv.into());
+        decryptor.decrypt_padded_b2b_mut::<cbc::cipher::block_padding::NoPadding>(
+            &inbuff[0x14..0x14+header.data_size() as usize], 
+            &mut outbuff[..header.data_size() as usize]
+        ).unwrap();
+
 
         Ok(KirkReturnValues::KirkOperationSuccess)
     }
@@ -440,7 +467,7 @@ pub fn sce_utils_buffer_copy_with_range(outbuff: &mut [u8], out_size: usize, inb
             return Ok(kirk_ctx.kirk_cmd4(outbuff, inbuff, in_size)?);
         },
         KirkCommand::DecryptIv0 => {
-            Ok(1)
+            return Ok(kirk_ctx.kirk_cmd7(outbuff, inbuff, in_size));
         },
         KirkCommand::PrivSignCheck => {
             Ok(1)
