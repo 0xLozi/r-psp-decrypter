@@ -151,7 +151,7 @@ impl KirkCtx {
         let header = Kirk_Aes128CBC_Header::new(&inbuff);
         let key: &[u8];
 
-        if self.is_kirk_initialized { return Ok(KirkReturnValues::KirkNotInitialized) }
+        if !self.is_kirk_initialized { return Ok(KirkReturnValues::KirkNotInitialized) }
         if header.mode() != KirkModes::KirkModeDecryptCbc as u32 { return Ok(KirkReturnValues::KirkInvalidMode) }
         if header.data_size() == 0 { return Ok(KirkReturnValues::KirkInvalidSize) }
 
