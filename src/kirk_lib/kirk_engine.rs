@@ -4,9 +4,10 @@ use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 use crate::error_handling::errors::{KirkError, PspError};
 use crate::kirk_lib::kirk_engine::KirkModes::{KirkModeCmd1, KirkModeCmd2, KirkModeCmd3, KirkModeDecryptCbc};
 use crate::kirk_lib::kirk_engine::KirkReturnValues::KirkInvalidMode;
-use crate::kirk_lib::kirk_headers::{self, KirkCmd1EcdsaHeader, KirkCmd1Header, Kirk_Aes128CBC_Header};
+use crate::kirk_lib::kirk_headers::{self, Kirk_Aes128CBC_Header, Kirk_SHA1_HEADER, KirkCmd1EcdsaHeader, KirkCmd1Header, Kirk_CMD12_BUFFER};
 use sha1::{Sha1, Digest};
 use cmac::{Cmac, Mac};
+
 
 // We create an alias
 type Aes128CbcDec = cbc::Decryptor<Aes128>;
@@ -227,6 +228,34 @@ impl KirkCtx {
         }
         Ok(KirkReturnValues::KirkSigCheckInvalid)
     }
+
+
+    pub fn kirk_cmd11(&self, outbuff: &mut [u8], inbuff: &[u8], in_size: usize) -> Result<KirkReturnValues, KirkError> {
+        let header = Kirk_SHA1_HEADER::new(inbuff);
+        let mut sha = Sha1::new();
+
+        if !self.is_kirk_initialized { return Ok(KirkReturnValues::KirkNotInitialized) }
+        if header.data_size == 0 || in_size == 0 { return Ok(KirkReturnValues::KirkDataSizeZero) }
+
+        sha.update(&inbuff[4..4 + header.data_size as usize]);
+
+        let result = sha.finalize();
+
+        outbuff[..20].copy_from_slice(&result);
+
+        Ok(KirkReturnValues::KirkOperationSuccess)
+    }
+
+    pub fn kirk_cmd12(&self, outbuff: &mut [u8], out_size: usize) -> Result<KirkReturnValues, KirkError> {
+        let k: [u8;0x15];
+        let key_pair = Kirk_CMD12_BUFFER::new(outbuff);
+
+
+        Ok(KirkReturnValues::KirkOperationSuccess)
+    }
+
+
+
 }
 
 
@@ -467,16 +496,16 @@ pub fn sce_utils_buffer_copy_with_range(outbuff: &mut [u8], out_size: usize, inb
             return Ok(kirk_ctx.kirk_cmd4(outbuff, inbuff, in_size)?);
         },
         KirkCommand::DecryptIv0 => {
-            return Ok(kirk_ctx.kirk_cmd7(outbuff, inbuff, in_size));
+            return Ok(kirk_ctx.kirk_cmd7(outbuff, inbuff, in_size)?);
         },
         KirkCommand::PrivSignCheck => {
-            Ok(1)
+            return Ok(kirk_ctx.kirk_cmd10(inbuff, in_size)?)
         },
         KirkCommand::Sha1Hash => {
-            Ok(1)
+           return Ok(kirk_ctx.kirk_cmd11(outbuff, inbuff, in_size)?);
         },
         KirkCommand::EcdsaGenKeys => {
-            Ok(1)
+            return Ok(kirk_ctx.kirk_cmd12(outbuff, out_size)?);
         },
         KirkCommand::EcdsaMultiplyPoint => {
             Ok(1)

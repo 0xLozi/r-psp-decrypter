@@ -151,5 +151,55 @@ Like this one, i'ts really good though but I have to make something to that stru
 
 
 
+**About Kirk_cmd12**
+First, let's have a look of where the issue started:
+```cpp
+  KIRK_CMD1_HEADER* header = (KIRK_CMD1_HEADER*)inbuff;
+```
 
+You'll probably are seeing this: I'm declaring a pointer of type `KIRK_CMD1_HEADER`, which is a **struct**, and the result of it is a casting pointer of the same type that  points to inbuff (a special address of memory).
+
+While highly performant, this approach is fundamentally unsafe. It allows for silent buffer overflows, overlapping memory mutations, and dangling pointers.
+
+When porting this engine to Rust, the naive approach is to parse the `outbuff` bytes into an owned Rust struct (copying the memory), mutate the struct, and serialize it back into bytes. However, this introduces severe performance overhead (memory copying and allocation) unacceptable for a hardware emulator.
+
+**Challenge:** How do we replicate the exact zero-copy, direct-memory-mutation performance of C pointer casting while strictly adhering to Rust's memory safety rules and borrow checker?
+
+#### Decision
+We will implement **Bounded Memory Lenses** using explicit lifetimes and mutable slice partitioning.
+
+Instead of owning data, hardware struct representations (e.g., `Kirk_CMD12_BUFFER`, `ECDSA_POINT`) will hold explicit mutable references (`&mut`) to precisely sized arrays mapped directly over the caller's buffer.
+
+##### Lifetime Contracts
+To prevent dangling pointers, every hardware struct is bound to the exact lifespan of the buffer it wraps using a named lifetime parameter (e.g., `<'a>`):
+
+```rust
+pub struct ECDSA_POINT<'a> {
+    pub x: &'a mut [u8; 0x14],
+    pub y: &'a mut [u8; 0x14],
+}
+```
+This guarantees at compile-time that the struct cannot outlive the buffer it modifies, completely eliminating Segfaults.
+
+##### Non-Overlapping Mutability via `split_at_mut`
+Rust enforces a strict "One Mutable Key" rule, preventing multiple mutable references to the same buffer. To safely map multiple struct fields to a single buffer, we utilize `split_at_mut()`. This mathematically proves to the compiler that the memory chunks do not overlap, preventing race conditions.
+
+```rust
+let (x_slice, rest_buffer) = outbuff.split_at_mut(0x14);
+```
+
+##### Strict Sizing Bounds
+Dynamic slices (`&mut [u8]`) are explicitly upgraded to fixed-size array pointers (`&mut [u8; SIZE]`) via `try_into().unwrap()`. This acts as an impenetrable bounds check. If a caller passes a buffer that is too small, the emulator will explicitly panic at the boundary rather than silently corrupting adjacent memory.
+
+##### Consequences
+**Positive Impacts**
+- **Zero-Copy Performance:** Modifying a field on the Rust struct modifies the exact physical byte in the original array instantly. No serialization or deserialization is required.
+
+- **100% Memory Safety:** Buffer overflows and dangling pointers are mathematically impossible.
+
+- **Defensive Isolation:** Sub-structs (like `ECDSA_POINT`) are handed strictly bounded sub-slices, making it physically impossible for them to corrupt the memory of their parent struct (like `private_key`).
+
+**Negative Impacts**
+- Lifetime Complexity: The codebase requieres explicit lifetime annotations which increates de learning curve and too much syntax noise.
+- Strict Construction: Structs must be instantiated specifically via factory methods, that hancdle safe partitioning, rather than direct instantiation.
 
