@@ -487,6 +487,8 @@ pub fn kirk_cmd1_decrypt (
 }
 
 
+// Just ignoring it because It's not implemented yet
+#[cfg(any)]
 pub fn sce_utils_buffer_copy_with_range(outbuff: &mut [u8], out_size: usize, inbuff: &[u8], in_size: usize, cmd: KirkCommand, kirk_ctx: KirkCtx) -> Result<KirkReturnValues, KirkError> {
     match cmd {
         KirkCommand::DecryptPrivate => {

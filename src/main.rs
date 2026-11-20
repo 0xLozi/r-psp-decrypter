@@ -4,13 +4,11 @@ mod keys_service;
 mod kirk_lib;
 mod error_handling;
 mod prx_types;
-mod psp_decrypt_lib;
 use error_handling::errors::PspError;
 use std::fs::File;
 use std::io::{Read, Write};
 use prx_types::decrypt_prx;
 use crate::kirk_lib::kirk_engine::kirk7;
-mod psar_decrypter;
 mod common;
 
 
@@ -50,6 +48,8 @@ fn main() -> Result<(), PspError>{
         eprintln!("Uso: {} <ruta_al_archivo_EBOOT.BIN>", args[0]);
         return Err(PspError::DecryptionFailed);
     }
+    
+    println!("This is a test");
 
     let entry_route = &args[1];
     let exit_route = format!("{}.dec", entry_route);
@@ -82,7 +82,10 @@ fn main() -> Result<(), PspError>{
         // THIS MEANS is a normal game. Thus it'll be type 1 or type 2 , etc.
         println!("~PSP header detected. Decrypting game...");
 
-        match decrypt_prx(&mut eboot_data, None) {
+        let mut outbuf = None;
+        let mut seed = None;
+
+        match decrypt_prx(&mut eboot_data, &mut outbuf, &mut seed) {
             Ok(_) => {
                 let offset_elf = (0..eboot_data.len() - 4)
                     .find(|&i| eboot_data[i..i + 4] == [0x7F, 0x45, 0x4C, 0x46])
@@ -106,51 +109,7 @@ fn main() -> Result<(), PspError>{
         }
 
     } else if magic == b"\x00PBP" {
-        let mut ctx = PsarContext::new();
-
-        // This means it's an official update or a container
-        println!("PBP header detected. decryption mode (Type 5).");
-
-        let psar_offset = u32::from_le_bytes(
-            eboot_data[0x24..0x28].try_into().map_err(|_| PspError::DecryptionFailed)?
-        ) as usize;
-
-        let psar_data = &eboot_data[psar_offset..];
-
-        // We read de signature in order to see if we are positioned correctly
-        if &psar_data[0..4] != b"PSAR" {
-            eprintln!("Error: Couldn't find PSAR vault at offset 0x{:X}", psar_offset);
-            return Err(PspError::DecryptionFailed);
-        }
-
-        // inside Imhex, the size is 1 byte. Therefore the representation is uint8_t
-        ctx.psar_version = psar_data[4];
-
-        println!("Psar Found lmaooo");
-
-        println!(
-            "Psar: {}",
-            std::str::from_utf8(&psar_data[0..4]).unwrap()
-        );
-
-
-        // The PSAR header contains different versions
-        // Versions from 6.60 usually contains an extended header
-        // The total size of PSAR shows off at 0x1C
-        
-        // But what matters for the key math usually appears in an information block 
-        // from 0x20 to 0x200 depending on the exact type
-
-        // We have to generate the seed based of the header
-        // let external_seed = generate_seed_psar(&psar_data_header);
-
-        // Extract the first PRX
-        // let prx_buffer = extract_prx_from_psar(&psar_data, index);
-
-        // Send it to out Engine
-        // let size = psp_decrypt::decrypt_prx(&mut prx_buffer, Some(&externar_seed))?;
-        // psar_decrypter::psp_decrypt_psar(psar_data, ".", &mut ctx)?;
-        println!("We need to implement the PSAR mathematitian tool, but the route is ready");
+        eprintln!("PBP firmware/update decryption is not implemented yet... It's too long!!!!")
     } else {
         eprintln!("File format not supported. Magic: {:?}", magic);
         return Err(PspError::DecryptionFailed);

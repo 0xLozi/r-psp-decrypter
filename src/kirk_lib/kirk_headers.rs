@@ -289,18 +289,6 @@ impl HeaderKeys {
     }
 }
 
-pub struct kirk_ctx {
-    pub is_kirk_initialized: u8,
-    pub aes_kirk1: ,
-}
-impl kirk_ctx {
-    pub fn new() -> Self {
-        let is_kirk_initialized: u8 = 0;
-        Self { is_kirk_initialized }
-    }
-}
-
-
 
 pub struct KirkCtx { 
     pub is_kirk_initialized: u8,
