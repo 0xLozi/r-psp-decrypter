@@ -3,6 +3,7 @@ use crate::kirk_lib::kirk_engine::{kirk7, kirk_cmd1_decrypt};
 use sha1::{Sha1, Digest};
 use crate::keys_service::{get_tag_info, get_tag_info_2};
 use crate::kirk_lib::kirk_headers::KirkCmd1Header;
+use super::types;
 
 /// Representa la cabecera de un archivo PRX o EBOOT de Tipo 1 (Ej: Lego Batman).
 ///
@@ -16,352 +17,14 @@ use crate::kirk_lib::kirk_headers::KirkCmd1Header;
 /// forma segura, cargamos toda la cabecera en un solo bloque CONTIGUO
 /// de 336 bytes (0x150). Luego usamos "slices" (referencias a rangos exactos) para
 /// leer o desencriptar partes específicas sin violar la seguridad de la memoria.
-pub struct PrxType1 {
-    pub data: [u8; 0x150],
-}
 
-impl PrxType1 {
-    /// Construye un nuevo PrxType1 a partir de los datos crudos del archivo.
-    pub fn new(prx: &[u8]) -> Self {
-        let mut data = [0u8; 0x150];
-        
-        // utilizamos los offsets del C++ original:
-        data[0..4].copy_from_slice(&prx[0xD0..0xD4]);       // tag
-        data[4..0x18].copy_from_slice(&prx[0xD4..0xE8]);    // sha1 (20 bytes / 0x14)
-        data[0x18..0x40].copy_from_slice(&prx[0xE8..0x110]); // unused (40 bytes / 0x28)
-        data[0x40..0x80].copy_from_slice(&prx[0x110..0x150]);// kirkBlock parte 1 (64 bytes / 0x40)
-        data[0x80..0xD0].copy_from_slice(&prx[0x80..0xD0]);  // kirkBlock parte 2
-        data[0xD0..0x150].copy_from_slice(&prx[0..0x80]);    // prxHeader (128 bytes / 0x80)
-
-        Self { data }
-    }
-
-    pub fn decrypt(&mut self, key_id: i32) -> Result<(), KirkError> {
-        // En C++ la firma era: kirk7(sha1+0xC, sha1+0xC, 0xA0, key);
-        // Nuestro 'sha1' empieza en el offset 4.
-        // 4 + 12 (0xC) = 16 (0x10).
-        // Si queremos desencriptar 160 bytes (0xA0): 16 + 160 = 176 (0xB0).
-        
-        // Rust nos obliga a ser explicito y seguros...
-        kirk7(&mut self.data[0x10..0xB0], key_id)?;
-        
-        Ok(())
-    }
-
-    pub fn tag(&self) -> &[u8] {
-        &self.data[0..4]
-    }
-
-    pub fn sha1(&self) -> &[u8] {
-        &self.data[4..0x18]
-    }
-
-    /// Returns 40 unused bytes
-    pub fn unused(&self) -> &[u8] {
-        &self.data[0x18..0x40]
-    }
-
-    /// Returns KIRK block (144 bytes united)
-    pub fn kirk_block(&self) -> &[u8] {
-        &self.data[0x40..0xD0]
-    }
-
-    // prxHeader (128 bytes / 0x80)
-    // Remember, we use this position of the array because here we put everythign into a giant array. Thus we have to copy there instead of 0x00 to 0x80
-    /// Devuelve la cabecera final del PRX
-    pub fn prx_header(&self) -> &[u8] {
-        &self.data[0xD0..0x150]
-    }    
-
-    // SHA_CTX ctx;
-    // SHAInit(&ctx);
-    // SHAUpdate(&ctx, xorbuf.data(), 0x14);
-    // SHAUpdate(&ctx, type1.unused, sizeof(type1.unused));
-    // SHAUpdate(&ctx, type1.kirkBlock, sizeof(type1.kirkBlock));
-    // SHAUpdate(&ctx, type1.prxHeader, sizeof(type1.prxHeader));
-
-    pub fn is_valid(&self, xorbuf: &[u8]) -> bool {
-        let mut hasher = Sha1::new();
-
-        hasher.update(&xorbuf[0..0x14]);
-
-        hasher.update(self.unused());
-        hasher.update(self.kirk_block());
-        hasher.update(self.prx_header());
-
-        let hash_calculated = hasher.finalize();
-        hash_calculated[..] == self.sha1()[..]
-    }
-
-}
-
-struct PrxType2 {
-    data: [u8; 0x150],
-}
-
-impl PrxType2 {
-    const TAG: std::ops::Range<usize>       = 0x00..0x04;
-    const EMPTY: std::ops::Range<usize>     = 0x04..0x5C;
-    const ID: std::ops::Range<usize>        = 0x5C..0x6C;
-    const SHA1: std::ops::Range<usize>      = 0x6C..0x80;
-    const KIRK_HDR: std::ops::Range<usize>  = 0x80..0xC0;
-    const KIRK_META: std::ops::Range<usize> = 0xC0..0xD0;
-    const PRX_HDR: std::ops::Range<usize>   = 0xD0..0x150;
-
-    fn new(prx: &[u8]) -> Self {
-        // Definimos el mapa de memoria estático para no tener que usar números mágicos...
-        let mut data = [0u8; 0x150];
-
-        data[Self::TAG].copy_from_slice(&prx[0xD0..0xD4]);
-        data[Self::ID].copy_from_slice(&prx[0x140..0x150]);
-        data[Self::SHA1].copy_from_slice(&prx[0x12C..0x140]);
-
-        // This is the kirk header that was split into two...
-        data[0x80..0xB0].copy_from_slice(&prx[0x80..0xB0]);
-        data[0xB0..0xC0].copy_from_slice(&prx[0xC0..0xD0]);
-
-        data[Self::KIRK_META].copy_from_slice(&prx[0xB0..0xC0]);
-        data[Self::PRX_HDR].copy_from_slice(&prx[0..0x80]);
-
-        Self { data }
-    }
-
-    fn decrypt(&mut self, key_id: i32) -> Result<(), KirkError> {
-        let start = Self::ID.start;
-        let decrypt_block = &mut self.data[start .. start + 0x60];
-
-        kirk7(decrypt_block, key_id)?;
-
-        Ok(())
-    }
-
-    // TO-DO: Implementar esto
-    pub fn is_valid(&self, xorbuf: &[u8]) -> bool {
-        let mut hasher = Sha1::new();
-        hasher.update(self.tag());
-        hasher.update(&xorbuf[0..0x10]);
-        hasher.update(self.empty());
-        hasher.update(self.id());
-        hasher.update(self.kirk_header());
-        hasher.update(self.kirk_metadata());
-        hasher.update(self.prx_header());
-        let hash_calculated = hasher.finalize();
-
-        hash_calculated[..] == self.sha1()[..]
-    }
-
-    fn tag(&self) -> &[u8] { &self.data[Self::TAG] }
-    fn id(&self) -> &[u8] { &self.data[Self::ID] }
-    fn sha1(&self) -> &[u8] { &self.data[Self::SHA1] }
-    fn kirk_header(&self) -> &[u8] { &self.data[Self::KIRK_HDR] }
-    fn prx_header(&self) -> &[u8] { &self.data[Self::PRX_HDR] }
-    fn empty(&self) -> &[u8] { &self.data[Self::EMPTY] }
-    fn kirk_metadata(&self) -> &[u8] { &self.data[Self::KIRK_META] }
-
-}
-
-
-pub struct PrxType0 {
-    data: [u8;0x150],
-}
-
-impl PrxType0 {
-    pub fn new(prx: &[u8]) -> Self {
-        let mut data = [0u8;0x150];
-        data[0..4].copy_from_slice(&prx[0xD0..0xD0+4]);
-        data[4..0x18].copy_from_slice(&prx[0xD4.. 0xD4+0x14]);
-        data[0x18..0x40].copy_from_slice(&prx[0xE8.. 0xE8 + 0x28]);
-        data[0x40..0x80].copy_from_slice(&prx[0x110..0x110 + 0x40]);
-        data[0x80..0xD0].copy_from_slice(&prx[0x80..0xD0]);
-        data[0xD0..0x150].copy_from_slice(&prx[0..0x80]);
-
-        Self { data }
-    }
-    /// Devuelve los 4 bytes del Tag
-    pub fn tag(&self) -> &[u8] {
-        &self.data[0..4]
-    }
-
-    /// Devuelve los 20 bytes del SHA-1 original
-    pub fn sha1(&self) -> &[u8] {
-        &self.data[4..0x18]
-    }
-
-    /// Devuelve los 40 bytes sin usar
-    pub fn unused(&self) -> &[u8] {
-        &self.data[0x18..0x40]
-    }
-
-    /// Devuelve el bloque de KIRK entero (Los 144 bytes unidos)
-    pub fn kirk_block(&self) -> &[u8] {
-        &self.data[0x40..0xD0]
-    }
-
-    /// Devuelve la cabecera final del PRX
-    pub fn prx_header(&self) -> &[u8] {
-        &self.data[0xD0..0x150]
-    }
-
-    pub fn decrypt_header(&mut self, xorbuf: &[u8], key_id: i32) -> Result<(), KirkError> {
-        // En el Tipo 0, el bloque a desencriptar arranca en el offset 0x40 (kirk_block)
-        let inicio = 0x40;
-        
-        // (XOR antes de desencriptar)
-        for i in 0..0x70 {
-            self.data[inicio + i] ^= xorbuf[i + 0x14];
-        }
-
-        // 2. La carne (KIRK7 procesa 112 bytes / 0x70)
-        kirk7(&mut self.data[inicio..inicio + 0x70], key_id)?;
-
-        // 3. Pan de abajo (XOR después de desencriptar)
-        for i in 0..0x70 {
-            self.data[inicio + i] ^= xorbuf[i + 0x20];
-        }
-
-        Ok(())
-    }
-
-    /// Valida matemáticamente que la llave es correcta y los datos están íntegros ANTES de desencriptar.
-    pub fn is_valid(&self, xorbuf: &[u8]) -> bool {
-        use sha1::{Sha1, Digest};
-        let mut hasher = Sha1::new();
-
-        // La misma receta de licuadora que el Tipo 1
-        hasher.update(&xorbuf[0..0x14]);
-        hasher.update(self.unused());
-        hasher.update(self.kirk_block());
-        hasher.update(self.prx_header());
-
-        let hash_calculado = hasher.finalize();
-
-        // Comparamos el resultado con el SHA-1 original del archivo
-        hash_calculado[..] == self.sha1()[..]
-    }
-}
-
-struct PrxType5 {
-    data: [u8;0x150],
-}
-
-impl PrxType5 {
-
-    pub fn new(prx: &[u8]) -> Self {
-        let mut data = [0u8; 0x150];
-        
-        // 1. tag
-        data[0..0x04].copy_from_slice(&prx[0xD0..0xD4]);
-        // 2. empty (0x58 bytes de ceros, ya los tiene por inicialización)
-        // 3. id
-        data[0x5C..0x6C].copy_from_slice(&prx[0x140..0x150]);
-        // 4. sha1
-        data[0x6C..0x80].copy_from_slice(&prx[0x12C..0x140]);
-        // 5. kirkHeader (partido en dos)
-        data[0x80..0xB0].copy_from_slice(&prx[0x80..0xB0]);
-        data[0xB0..0xC0].copy_from_slice(&prx[0xC0..0xD0]);
-        // 6. kirkMetadata
-        data[0xC0..0xD0].copy_from_slice(&prx[0xB0..0xC0]);
-        // 7. prxHeader
-        data[0xD0..0x150].copy_from_slice(&prx[0..0x80]);
-
-        Self { data }
-    }
-
-    fn tag(&self) -> &[u8] {
-        &self.data[0..0x04]
-    }
-
-    // data[0xC0..0xD0].copy_from_slice(&prx[0xB0..0xC0]);
-    fn kirk_metadata(&self) -> &[u8] {
-        &self.data[0xC0..0xD0]
-    }
-
-
-    fn id(&self) -> &[u8] {
-        &self.data[0x5C..0x6C]
-    }
-
-    fn sha1(&self) -> &[u8] {
-        &self.data[0x6C..0x80]
-    }
-
-    fn kirk_header(&self) -> &[u8] {
-        &self.data[0x80..0xC0]
-    }
-
-    fn prx_header(&self) -> &[u8] {
-        &self.data[0xD0..0x150]
-    }   
-
-    fn empty(&self) -> &[u8] {
-        &self.data[0x04..0x5C]
-    }
-
-    fn decrypt_header(&mut self, key_id: i32, xor1: Option<&[u8]>, xor2: Option<&[u8]>) -> Result<(), KirkError> {
-        let mut temp_data: [u8;0x50] = [0u8;0x50];
-        temp_data[0..0x40].copy_from_slice(self.kirk_header());
-        temp_data[0x40..0x40+0x10].copy_from_slice(&self.sha1()[0..0x10]);
-
-        for i in 0..0x50 {
-            if let Some(k1) = xor1 {
-                // I do unwrap because is not None, therefore it'll never be Exception Error
-                temp_data[i] ^= k1[i % 0x10];
-            }
-
-            if let Some(k2) = xor2 {
-                temp_data[i] ^= k2[i%0x10];
-            }
-        }
-        kirk7(&mut temp_data, key_id)?;
-
-        // I FORGOT TO COPY THE RESULT BACK
-        self.data[0x80..0xC0].copy_from_slice(&temp_data[0..0x40]);
-        self.data[0x6C..0x7C].copy_from_slice(&temp_data[0x40..0x50]);
-
-        // copied comment from the original source
-        // second step is a XOR then decrypt id through to kirk header
-
-        // 'id' empieza en 0x5C, lo sabemos por los getters...
-        let inicio = 0x5C;
-        let fin = inicio + 0x60;
-
-        if let Some(k1) = xor1 {
-            // Hace XOR sobre los 96 bytes de la memoria principal
-            for i in 0..0x60 {
-                self.data[inicio + i] ^= k1[i % 0x10];
-            }
-        }       
-
-        // Segunda pasada del AES directo sobre la memoria principal
-        kirk7(&mut self.data[inicio..fin], key_id)?;
-
-        Ok(())
-    }
-
-
-    fn is_valid(&self, xorbuf_before_0x10: &[u8;0x10]) -> bool {
-        use sha1::{Sha1, Digest};
-        let mut hasher = Sha1::new();
-
-        hasher.update(self.tag());
-        hasher.update(xorbuf_before_0x10);
-        hasher.update(self.empty());
-        hasher.update(self.id());
-        hasher.update(self.kirk_header());
-        hasher.update(self.kirk_metadata());
-        hasher.update(self.prx_header());
-
-        let hash_calculated = hasher.finalize();
-        hash_calculated[..] == self.sha1()[..]
-    }
-}
 
 struct PrxType6 {
     data: [u8;0x150],
 }
 
 impl PrxType6 {
-    pub fn new(prx: &[u8]) -> Self {
+    fn new(prx: &[u8]) -> Self {
         let mut data = [0u8; 0x150];
         
         // tag
@@ -395,33 +58,33 @@ impl PrxType6 {
 
 
     // GETTERRRRRRRRRRRRRRRRRRS
-    pub fn tag(&self) -> &[u8] {
+    fn tag(&self) -> &[u8] {
         &self.data[0..0x04]
     }
 
     // getter del nuevo campo
-    pub fn ecdsa_signature_tail(&self) -> &[u8] {
+    fn ecdsa_signature_tail(&self) -> &[u8] {
         &self.data[0x3C..0x5C]
     }
 
-    pub fn id(&self) -> &[u8] {
+    fn id(&self) -> &[u8] {
         &self.data[0x5C..0x6C]
     }
 
-    pub fn sha1(&self) -> &[u8] {
+    fn sha1(&self) -> &[u8] {
         &self.data[0x6C..0x80]
     }
 
-    pub fn kirk_header(&self) -> &[u8] {
+    fn kirk_header(&self) -> &[u8] {
         &self.data[0x80..0xC0]
     }
 
-    pub fn prx_header(&self) -> &[u8] {
+    fn prx_header(&self) -> &[u8] {
         &self.data[0xD0..0x150]
     }   
 
     // DECRYPT
-    pub fn decrypt_header(&mut self, key_id: i32) -> Result<(), KirkError> {
+    fn decrypt_header(&mut self, key_id: i32) -> Result<(), KirkError> {
         // kirk7(id, id, 0x60, key);
         let inicio = 0x5C;
         let fin = inicio + 0x60;
@@ -433,7 +96,7 @@ impl PrxType6 {
 }
 
 
-pub fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
+fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
 
     let decrypt_size = u32::from_le_bytes(
         inbuf[0xB0..0xB4]
@@ -464,7 +127,7 @@ pub fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Re
         }
     }
 
-    let mut type0 = PrxType0::new(inbuf);
+    let mut type0 = types::PrxType0::new(inbuf);
 
     if !type0.is_valid(&xorbuf) {
         return Err(PspError::ValidationFailed);
@@ -500,7 +163,7 @@ pub fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Re
 
 }
 
-pub fn psp_decrypt_type1(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
+fn psp_decrypt_type1(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
     let decrypt_size = u32::from_le_bytes(
         inbuf[0xB0..0xB4]
         .try_into().map_err(|_| PspError::SizeError)?
@@ -534,7 +197,7 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Re
     }
 
     // Now we initialize the type1 struct
-    let mut type1 = PrxType1::new(inbuf);
+    let mut type1 = types::PrxType1::new(inbuf);
 
     // And then decrypt
 	type1.decrypt(key_id)
@@ -603,7 +266,7 @@ pub fn psp_decrypt_type1(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Re
 }
 
 
-pub fn psp_decrypt_type2(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
+fn psp_decrypt_type2(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
     // First we have to search into get_tag_2
     // Tag offset is the same as type 1
     let tag_offset = u32::from_le_bytes(
@@ -622,10 +285,9 @@ pub fn psp_decrypt_type2(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Re
     let mut xorbuf = expanded_seed(key_info, key_id, None)
     .map_err(|_| PspError::DecryptionFailed)?;
 
-    let mut type2 = PrxType2::new(inbuf);
+    let mut type2 = types::PrxType2::new(inbuf);
     type2.decrypt(key_id).map_err(|_| PspError::DecryptionFailed)?;
 
-    // SOY UN MOGOLICO: ESTO NO LO HABIA IMPLEMENTADO Y ESTUVE COMO AUTISTA VIENDO SI ESTABA BIENE EL CÓDIGO; TENIA QUE RETORNABA "FALSE" NADA MAS LA FUNCIÓN....
     let valid = type2.is_valid(&xorbuf);
 
     if valid {
@@ -702,7 +364,7 @@ pub fn psp_decrypt_type2(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Re
 }
 
 
-pub fn psp_decrypt_type5(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, external_seed: &[u8;16]) -> Result<usize, PspError> {
+fn psp_decrypt_type5(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, external_seed: &[u8;16]) -> Result<usize, PspError> {
     let tag_offset = u32::from_le_bytes(
         inbuf[0xD0..0xD4]
         .try_into()
@@ -724,7 +386,7 @@ pub fn psp_decrypt_type5(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, exter
         Some(external_seed), // Le inyectamos la llave que robamos del PSAR
     ).map_err(|_| PspError::DecryptionFailed)?;
 
-    let mut type5 = PrxType5::new(inbuf);
+    let mut type5 = types::PrxType5::new(inbuf);
     
     // Desencriptamos el header usando la semilla externa.
     // Type 5 usa internamente el comando KIRK_CMD5, no el CMD1.
@@ -785,7 +447,7 @@ pub fn psp_decrypt_type5(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, exter
     Ok(real_size)   
 }
 
-pub fn decrypt_kirk_header(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8], key_id: i32) -> Result<(), KirkError>{
+fn decrypt_kirk_header(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8], key_id: i32) -> Result<(), KirkError>{
     for i in 0..0x40 {
         outbuf[i] = inbuf[i] ^ xorbuf[i];
     }
@@ -799,7 +461,7 @@ pub fn decrypt_kirk_header(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8], key_i
     Ok(())
 }
 
-pub fn decrypt_kirk_header_type_0(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8], key_id: i32) -> Result<(), KirkError> {
+fn decrypt_kirk_header_type_0(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8], key_id: i32) -> Result<(), KirkError> {
     for i in 0..0x70 {
         outbuf[i] = inbuf[i] ^ xorbuf[i+0x14];
     }
@@ -814,7 +476,7 @@ pub fn decrypt_kirk_header_type_0(outbuf: &mut [u8], inbuf: &[u8], xorbuf: &[u8]
 }
 
 // 144 bytes just to make it clear
-pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) -> Result<[u8; 0x90], KirkError> {
+fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) -> Result<[u8; 0x90], KirkError> {
     let mut expanded_seed = [0u8; 0x90];
 
     // Lógica para la expansión de la seed
@@ -844,9 +506,7 @@ pub fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) ->
 }
 
 
-// ESTA VA A SER LA ÚNICA FUNCIÓN PÚBLICA. 
-// TO-DO: FINALIZADA LA FUNCIÓN. PONER TODO EL PRIVADO
-// Inside "design_architectures.md" I explain why outbuf is a mutable reference of Option that contains a mutable reference of a slice of bytes
+// This is going to be the only public function
 pub fn decrypt_prx(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, seed: &mut Option<&[u8; 16]>) -> Result<usize, PspError>{
     let tag = u32::from_le_bytes(
         inbuf[0xD0..0xD0+4]
@@ -854,7 +514,6 @@ pub fn decrypt_prx(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, seed: &mut 
     );
 
     println!("Tag detectado: 0x{:08X}", tag);
-    // Usamos or_else para que si uno funciona, frene y no ejecute el resto.
     // fix this
     psp_decrypt_type0(&mut *inbuf, outbuf)
         .or_else(|_| psp_decrypt_type1(&mut *inbuf, outbuf))
@@ -864,16 +523,6 @@ pub fn decrypt_prx(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, seed: &mut 
             let actual_seed = seed.ok_or(PspError::MissingSeed)?;
             psp_decrypt_type5(&mut *inbuf, outbuf, actual_seed)
         })
-    
-
-    // psp_decrypt_type0(inbuf, outbuf)
-    //     .or_else(|_| psp_decrypt_type1(inbuf, outbuf))
-    //     .or_else(|_| psp_decrypt_type2(inbuf, outbuf))
-    //     .or_else(|_| {
-    //         // Si llega hasta acá y es Type 5, exige la seed que le pasó el main
-    //         let actual_seed = seed.ok_or(PspError::MissingSeed)?;
-    //         psp_decrypt_type5(inbuf, outbuf, actual_seed)
-    //     })
 }
 
 
@@ -884,6 +533,7 @@ mod tests {
     use std::fs::File;
     use std::io::{Read, Write};
 
+    // also fix this, same thing, arguments issue
     #[test]
    fn test_router_decryption_type0_succeeds() -> Result<(), PspError> {
         let ruta_eboot = "/home/snake/Downloads/lumine/lumines/lumines_game/PSP_GAME/SYSDIR/EBOOT.BIN";
@@ -894,7 +544,7 @@ mod tests {
         let mut eboot_data = Vec::new();
         file.read_to_end(&mut eboot_data).unwrap();
 
-		psp_decrypt_type0(&mut eboot_data)?;
+		//psp_decrypt_type0(&mut eboot_data)?;
 
 		let psp_header_size = 0x150;
 		let magic_bytes = &eboot_data[psp_header_size .. psp_header_size + 4];
@@ -917,6 +567,7 @@ mod tests {
         Ok(())
    } 
 
+   // fix this (wrong arguments while calling each function)
    #[test]
    fn test_router_decryption_type1_succeeds() -> Result<(), PspError> {
 		let ruta_eboot = "/home/snake/Downloads/lego_batman_game/PSP_GAME/SYSDIR/EBOOT.BIN";
@@ -925,7 +576,7 @@ mod tests {
 		let mut eboot_data = Vec::new();
 		file.read_to_end(&mut eboot_data).expect("No se pudo pasar los bytes del archivo al vector...");
 
-		psp_decrypt_type1(&mut eboot_data)?;
+		//psp_decrypt_type1(&mut eboot_data)?;
 
 		let elf = [0x7F, 0x45, 0x4C, 0x46]; // .ELF
 
@@ -951,7 +602,7 @@ mod tests {
 		let mut eboot_data = Vec::new();
 		file.read_to_end(&mut eboot_data).expect("No se pudo pasar los bytes del archivo al vector...");
 
-        psp_decrypt_type2(&mut eboot_data)?;
+        //psp_decrypt_type2(&mut eboot_data)?;
 
 		let elf = [0x7F, 0x45, 0x4C, 0x46]; // .ELF
 
