@@ -1,6 +1,3 @@
-use std::ptr::hash;
-use std::result;
-
 use crate::error_handling::errors::{KirkError, PspError};
 use crate::kirk_lib::kirk_engine::{kirk7, kirk_cmd1_decrypt};
 use sha1::{Sha1, Digest};

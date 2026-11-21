@@ -3,12 +3,10 @@ mod tag_info;
 mod keys_service;
 mod kirk_lib;
 mod error_handling;
-mod prx_types;
+mod prx;
 use error_handling::errors::PspError;
 use std::fs::File;
-use std::intrinsics::offset;
 use std::io::{Read, Write};
-use prx_types::decrypt_prx;
 mod common;
 
 
@@ -45,7 +43,7 @@ fn main() -> Result<(), PspError>{
         let mut outbuf = None;
         let mut seed = None;
 
-        decrypt_prx(&mut eboot_data, &mut outbuf, &mut seed)?;
+        prx::decrypt_prx(&mut eboot_data, &mut outbuf, &mut seed)?;
         let pure_elf = &eboot_data[find_offset_elf(&eboot_data)?..];
         let mut out_file = File::create(&exit_route)?;
 
