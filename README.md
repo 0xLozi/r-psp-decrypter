@@ -10,41 +10,8 @@
 ## Overview
 This is a command-line tool designed to run on modern operating systems (Windows, macOS, Linux). It unpacks and decrypts Sony PSP executable files by software-emulating the original hardware cryptography engine. **Note: This is a PC tool, not a PSP homebrew application.**
 
-## Features
-
-- **Automatic encryption type detection** (tag parsing)
-- Full support for **AES decryption** + KIRK engine
-- **SHA1 integrity validation**
-- Safe binary header parsing with zero-copy focus
-- Strong emphasis on **memory safety** and modern Rust practices (minimal `unsafe`)
-- Clean architecture with good separation of concerns
-
-## Project Structure
-
-```bash
-src/
-├── main.rs                 # CLI entry point
-├── headers.rs              # Binary header parsing
-├── prx_decrypt.rs          # Main decryption logic
-├── kirk_lib/               # KIRK engine implementation
-├── keys.rs                 # Key management
-└── utils.rs                # Helpers
-```
-
-## Quick Start
-### Build & Run
-```bash
-# Build optimized version
-cargo build --release
-
-# Run
-./target/release/psp-prx-decrypter <path_to_prx_or_eboot_file>
-```
-
-## Run Tests
-```bash
-cargo test
-```
+### Status
+The decryption tool is being refactored and It's currently fixing misc bugs. So after doing that stuff I'll present the full features available and it's structure.
 
 ### Motivation
 This project started as a learning exercise in reverse engineering and low-level programming. The goal was to take an existing C++ tool and rebuild it in modern, safe Rust while maintaining (or improving) performance and adding better error handling.
