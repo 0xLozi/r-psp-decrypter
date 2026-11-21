@@ -8,36 +8,7 @@ use error_handling::errors::PspError;
 use std::fs::File;
 use std::io::{Read, Write};
 use prx_types::decrypt_prx;
-use crate::kirk_lib::kirk_engine::kirk7;
 mod common;
-
-
-
-const SIZE_A: usize = 0x110;
-
-pub struct PsarContext {
-    decrypted: bool,
-    overhead: usize,
-    psar_version: u8,
-    i_base: usize,
-    table_mode: u32,
-    g_tables: [Vec<u8>; 13]
-}
-
-impl PsarContext {
-    pub fn new() -> Self {
-        Self {
-            decrypted: false,
-            overhead: 0,
-            psar_version: 1,
-            i_base: 0, // I think it's ok like that
-            table_mode: 0,
-            g_tables: std::array::from_fn(|_| Vec::new()),
-        }
-    }
-}
-
-
 
 
 fn main() -> Result<(), PspError>{
@@ -48,8 +19,6 @@ fn main() -> Result<(), PspError>{
         eprintln!("Uso: {} <ruta_al_archivo_EBOOT.BIN>", args[0]);
         return Err(PspError::DecryptionFailed);
     }
-    
-    println!("This is a test");
 
     let entry_route = &args[1];
     let exit_route = format!("{}.dec", entry_route);
@@ -63,6 +32,8 @@ fn main() -> Result<(), PspError>{
             return Err(PspError::DecryptionFailed);
         }
     };
+
+    let mut file = File::open(entry_route).map_err(|_| PspError::DecryptionFailed)?;
 
     let mut eboot_data = Vec::new();
 
