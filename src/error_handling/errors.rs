@@ -54,7 +54,10 @@ pub enum PspError {
     ParsingError,
 
     #[error("String representation c-like failed")]
-    StringRepresentation
+    StringRepresentation,
+
+    #[error("There are missing arguments")]
+    MissingArguments
 }
 
 
