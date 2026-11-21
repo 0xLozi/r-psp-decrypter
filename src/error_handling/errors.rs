@@ -8,7 +8,7 @@ pub enum PspError {
     #[error("Magic number inválido: 0x{0:X}")]
     InvalidMagicNumber(u32),
     
-    #[error("Error de I/O: {0}")]
+    #[error("I/O Error: {0}")]
     Io(#[from] std::io::Error),
     
     #[error("Error al convertir slice: {0}")]

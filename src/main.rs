@@ -25,22 +25,14 @@ fn main() -> Result<(), PspError>{
     println!("Opening file: {}", entry_route);
 
     // Now we read the file
-    let mut file = match File::open(entry_route) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("No se pudo abrir el archivo {}", e);
-            return Err(PspError::DecryptionFailed);
-        }
-    };
+    let mut file = File::open(entry_route)?;
 
-    let mut file = File::open(entry_route).map_err(|_| PspError::DecryptionFailed)?;
-
+    // we don't know at compile time it's size...
     let mut eboot_data = Vec::new();
+    file.read_to_end(&mut eboot_data)?;
 
-    if let Err(e) = file.read_to_end(&mut eboot_data) {
-        eprintln!("Error al leer el archivo: {}", e);
-        return Err(PspError::DecryptionFailed);
-    }
+
+
 
     if eboot_data.len() < 4 {
         eprintln!("El archivo es demasiado pequeño.");
