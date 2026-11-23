@@ -601,24 +601,11 @@ pub static G_TAG_INFO_2: [TAG_INFO2; 144] = [
     TAG_INFO2 { tag: 0x2FD311F0, key: &PAUTH_F7AA47F6_2, code: 0x47, type_code: Some(5), seed: Some(&PAUTH_F7AA47F6_XOR) },
 ];
 
-
-
-pub fn get_tag_info(tagFind: u32) -> Option<&'static TAG_INFO>{
-
-    for itag in &G_TAG_INFO {
-        if itag.tag == tagFind {
-            return Some(itag);
-        }
-    }
-
-    return None; // Which means not found
+pub fn get_tag_info(tagFind: u32) -> Option<&'static TAG_INFO> {
+    G_TAG_INFO.iter().find(|entry| entry.tag == tagFind)
 }
 
-pub fn get_tag_info_2(tagFing: u32) -> Option<&'static TAG_INFO2> {
-    for itag in &G_TAG_INFO_2 {
-        if itag.tag == tagFing {
-            return Some(itag);
-        }
-    }
-    None
+
+pub fn get_tag_info_2(tagFind: u32) -> Option<&'static TAG_INFO2> {
+    G_TAG_INFO_2.iter().find(|entry| entry.tag == tagFind)
 }
