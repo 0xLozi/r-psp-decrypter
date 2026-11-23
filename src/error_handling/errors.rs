@@ -57,7 +57,11 @@ pub enum PspError {
     StringRepresentation,
 
     #[error("There are missing arguments")]
-    MissingArguments
+    MissingArguments,
+
+    #[error("The file is corrupted")]
+    CorruptedFile
+
 }
 
 

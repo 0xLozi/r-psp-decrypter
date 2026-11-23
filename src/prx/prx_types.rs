@@ -13,8 +13,8 @@ fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
 
     let key_info = get_tag_info(tag)?;
     let key_id = key_info.code as u32;
-    
     let mut xorbuf = [0u8; 0x90];
+
 
     // Now we gotta copy the key the safest way
     match key_info.key { 
@@ -35,7 +35,7 @@ fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
         return Err(PspError::ValidationFailed);
     }
 
-    // Con esto conseguimos el preciado kirk header desencriptado
+    // With this we get the unencrypted kirk header
     type0.decrypt_header(&xorbuf, key_id as i32)
     .map_err(|_| PspError::HeaderDecryptionFailed)?;
 
@@ -47,9 +47,14 @@ fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
 
     let size = kirk_cmd.data_size().map_err(|_| PspError::ValidationFailed)? as usize;
     let psp_header_size = 0x150;
+
+    // Here I'm making sure that the buffer is big enough to hold both the header and the claimed payload
+    if inbuf.len() < psp_header_size + size {
+        return Err(PspError::CorruptedFile);
+    }
+
     let payload = &mut inbuf[psp_header_size..psp_header_size+size];
 
-    // TODO: Payload (KIRK_CMD1)
     kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
     .map_err(|_| PspError::DecryptionFailed)?;
 
@@ -66,16 +71,10 @@ fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
 }
 
 fn psp_decrypt_type1(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
-    let decrypt_size = u32::from_le_bytes(
-        inbuf[0xB0..0xB4]
-        .try_into().map_err(|_| PspError::SizeError)?
-    );
+    let decrypt_size = read_u32_le(inbuf, 0xB0)?;
     println!("Size to decrypt: {} bytes", decrypt_size);
+    let tag = read_u32_le(inbuf, 0xD0)?;
 
-    let tag = u32::from_le_bytes(
-        inbuf[0xD0..0xD0+4]
-        .try_into().map_err(|_| PspError::PointerError)?
-    );
 
     // Now we obtain the tag_info from keys.rs
     let key_info = get_tag_info(tag)?;
@@ -151,6 +150,9 @@ fn psp_decrypt_type1(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
     // con el sobrante del bloque Kirk desencriptado.
     inbuf[0xD0..0x120].copy_from_slice(&final_kirk_block[0x20..0x70]);
 
+    if inbuf.len() < 0xD0 + padded_size {
+        return Err(PspError::CorruptedFile);
+    }
     let payload = &mut inbuf[0xD0 .. 0xD0 + padded_size];
 
     kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
@@ -161,7 +163,7 @@ fn psp_decrypt_type1(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
             return Err(PspError::SizeError);
         }
 
-        out[..real_size].copy_from_slice(payload);
+        out[..real_size].copy_from_slice(&payload[..real_size]);
     }
 
     Ok(real_size)
@@ -171,11 +173,7 @@ fn psp_decrypt_type1(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
 fn psp_decrypt_type2(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
     // First we have to search into get_tag_2
     // Tag offset is the same as type 1
-    let tag_offset = u32::from_le_bytes(
-        inbuf[0xD0..0xD4]
-        .try_into()
-        .map_err(|_| PspError::DecryptionFailed)?
-    );
+    let tag_offset = read_u32_le(inbuf, 0xD0)?;
     // Then we search the tag we receive inside TAG_INFO2
     let tag = get_tag_info_2(tag_offset)?;
 
@@ -267,12 +265,7 @@ fn psp_decrypt_type2(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
 
 fn psp_decrypt_type5(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, external_seed: &[u8;16]) -> Result<usize, PspError> {
     let tag_offset = read_u32_le(inbuf, 0xD0)?;
-
-    let decrypt_size = u32::from_le_bytes(
-        inbuf[0xB0..0xB4]
-        .try_into().map_err(|_| PspError::SizeError)?
-    );
-
+    let decrypt_size = read_u32_le(inbuf, 0xB0)?;
     let tag = get_tag_info_2(tag_offset)?;
     
     // Acá usamos la semilla EXTERNA en lugar de tag.seed
