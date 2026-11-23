@@ -1,4 +1,5 @@
 use crate::tag_info::{KeyType, TAG_INFO, TAG_INFO2};
+use crate::error_handling::errors::PspError;
 
 // PRXDecrypter 16-byte tag keys.
 static KEYS260_0: [u8; 16] = [0xC3, 0x24, 0x89, 0xD3, 0x80, 0x87, 0xB2, 0x4E, 0x4C, 0xD7, 0x49, 0xE4, 0x9D, 0x1D, 0x34, 0xD1];
@@ -601,11 +602,11 @@ pub static G_TAG_INFO_2: [TAG_INFO2; 144] = [
     TAG_INFO2 { tag: 0x2FD311F0, key: &PAUTH_F7AA47F6_2, code: 0x47, type_code: Some(5), seed: Some(&PAUTH_F7AA47F6_XOR) },
 ];
 
-pub fn get_tag_info(tagFind: u32) -> Option<&'static TAG_INFO> {
-    G_TAG_INFO.iter().find(|entry| entry.tag == tagFind)
+pub fn get_tag_info(tagFind: u32) -> Result<&'static TAG_INFO, PspError> {
+    G_TAG_INFO.iter().find(|entry| entry.tag == tagFind).ok_or(PspError::TagNotFound)
 }
 
 
-pub fn get_tag_info_2(tagFind: u32) -> Option<&'static TAG_INFO2> {
-    G_TAG_INFO_2.iter().find(|entry| entry.tag == tagFind)
+pub fn get_tag_info_2(tagFind: u32) -> Result<&'static TAG_INFO2, PspError> {
+    G_TAG_INFO_2.iter().find(|entry| entry.tag == tagFind).ok_or(PspError::TagNotFound)
 }

@@ -11,8 +11,7 @@ fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
     println!("Size to decrypt: {} bytes", decrypt_size);
     let tag = read_u32_le(inbuf, 0xD0)?;
 
-
-    let key_info = get_tag_info(tag).ok_or(PspError::TagNotFound)?;
+    let key_info = get_tag_info(tag)?;
     let key_id = key_info.code as u32;
     
     let mut xorbuf = [0u8; 0x90];
@@ -79,7 +78,7 @@ fn psp_decrypt_type1(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
     );
 
     // Now we obtain the tag_info from keys.rs
-    let key_info = get_tag_info(tag).ok_or(PspError::TagNotFound)?;
+    let key_info = get_tag_info(tag)?;
     let key_id = key_info.code as i32;
     
     // We initialize each data with 0 
@@ -178,8 +177,7 @@ fn psp_decrypt_type2(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
         .map_err(|_| PspError::DecryptionFailed)?
     );
     // Then we search the tag we receive inside TAG_INFO2
-    let tag = get_tag_info_2(tag_offset)
-    .ok_or(PspError::TagNotFound)?;
+    let tag = get_tag_info_2(tag_offset)?;
 
     // The same procedure as the other types: expand seed
     let key_id = tag.code as i32;
@@ -275,8 +273,7 @@ fn psp_decrypt_type5(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, external_
         .try_into().map_err(|_| PspError::SizeError)?
     );
 
-    let tag = get_tag_info_2(tag_offset)
-        .ok_or(PspError::TagNotFound)?;
+    let tag = get_tag_info_2(tag_offset)?;
     
     // Acá usamos la semilla EXTERNA en lugar de tag.seed
     let mut xorbuff = expanded_seed(
