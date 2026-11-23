@@ -1,6 +1,5 @@
 mod keys;
 mod tag_info;
-mod keys_service;
 mod kirk_lib;
 mod error_handling;
 mod prx;
