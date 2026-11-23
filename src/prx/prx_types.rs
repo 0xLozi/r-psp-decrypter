@@ -5,25 +5,12 @@ use crate::kirk_lib::kirk_headers::KirkCmd1Header;
 use super::types;
 
 fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
-
-    let decrypt_size = u32::from_le_bytes(
-        inbuf[0xB0..0xB4]
-        .try_into().map_err(|_| PspError::SizeError)?
-    );
-
     // PspError has a #[from] variant for TryFromSliceError,
     // so `?` converts the error automatically.
-    let decrypt_size = u32::from_le_bytes(
-        inbuf[0xB0..0xB4]
-        .try_into()?
-    );
-
+    let decrypt_size = read_u32_le(inbuf, 0xB0)?;
     println!("Size to decrypt: {} bytes", decrypt_size);
+    let tag = read_u32_le(inbuf, 0xD0)?;
 
-    let tag = u32::from_le_bytes(
-        inbuf[0xD0..0xD0+4]
-        .try_into().map_err(|_| PspError::PointerError)?
-    );
 
     let key_info = get_tag_info(tag).ok_or(PspError::TagNotFound)?;
     let key_id = key_info.code as u32;
@@ -281,11 +268,7 @@ fn psp_decrypt_type2(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
 
 
 fn psp_decrypt_type5(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, external_seed: &[u8;16]) -> Result<usize, PspError> {
-    let tag_offset = u32::from_le_bytes(
-        inbuf[0xD0..0xD4]
-        .try_into()
-        .map_err(|_| PspError::DecryptionFailed)?
-    );
+    let tag_offset = read_u32_le(inbuf, 0xD0)?;
 
     let decrypt_size = u32::from_le_bytes(
         inbuf[0xB0..0xB4]
@@ -442,6 +425,16 @@ pub fn decrypt_prx(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, seed: &mut 
 }
 
 
+fn read_u32_le(buf: &[u8], offset: usize) -> Result<u32, PspError> {
+    let bytes: [u8; 4] = buf
+        .get(offset..offset + 4)
+        .ok_or(PspError::SizeError)?
+        .try_into()?;
+    Ok(u32::from_le_bytes(bytes))
+}
+
+
+
 use crate::tag_info::{KeyType, TAG_INFO, TAG_INFO2};
 #[cfg(test)]
 mod tests {
@@ -534,10 +527,5 @@ mod tests {
 
         Ok(())
    }
-
-//    fn test_decryption_type5_succeeds() -> Result<(), PspError> {
-//         let ruta_eboot = "";
-
-//    }
 }
 

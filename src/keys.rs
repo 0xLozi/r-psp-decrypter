@@ -1,4 +1,3 @@
-use core::task;
 use crate::tag_info::{KeyType, TAG_INFO, TAG_INFO2};
 
 // PRXDecrypter 16-byte tag keys.
@@ -601,3 +600,25 @@ pub static G_TAG_INFO_2: [TAG_INFO2; 144] = [
     TAG_INFO2 { tag: 0x2FD312F0, key: &PAUTH_F7AA47F6_1, code: 0x47, type_code: Some(5), seed: Some(&PAUTH_F7AA47F6_XOR) },
     TAG_INFO2 { tag: 0x2FD311F0, key: &PAUTH_F7AA47F6_2, code: 0x47, type_code: Some(5), seed: Some(&PAUTH_F7AA47F6_XOR) },
 ];
+
+
+
+pub fn get_tag_info(tagFind: u32) -> Option<&'static TAG_INFO>{
+
+    for itag in &G_TAG_INFO {
+        if itag.tag == tagFind {
+            return Some(itag);
+        }
+    }
+
+    return None; // Which means not found
+}
+
+pub fn get_tag_info_2(tagFing: u32) -> Option<&'static TAG_INFO2> {
+    for itag in &G_TAG_INFO_2 {
+        if itag.tag == tagFing {
+            return Some(itag);
+        }
+    }
+    None
+}
