@@ -11,7 +11,7 @@ pub enum PspError {
     #[error("I/O Error: {0}")]
     Io(#[from] std::io::Error),
     
-    #[error("Error al convertir slice: {0}")]
+    #[error("Error converting slice: {0}")]
     SliceConversion(#[from] std::array::TryFromSliceError),
 
     #[error("Error al intentar leer el size del archivo...")]

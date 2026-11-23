@@ -1,22 +1,8 @@
 use crate::error_handling::errors::{KirkError, PspError};
 use crate::kirk_lib::kirk_engine::{kirk7, kirk_cmd1_decrypt};
-use sha1::{Sha1, Digest};
 use crate::keys_service::{get_tag_info, get_tag_info_2};
 use crate::kirk_lib::kirk_headers::KirkCmd1Header;
 use super::types;
-
-/// Representa la cabecera de un archivo PRX o EBOOT de Tipo 1 (Ej: Lego Batman).
-///
-/// # Diseño de Memoria: 
-/// En el código original de C++, la estructura estaba dividida en campos separados
-/// (tag, sha1, unused, kirkBlock, entre otros...). Al desencriptar, C++ hacía un truco medio que no se puede hacer en Rust xd:
-/// le pasaba el puntero del campo `sha1` al motor AES y le pedía que desencriptara tambien ese (cuando le estaba pasando el puntero id)
-/// 160 bytes (0xA0) hacia adelante, desbordando el arreglo y pisando los campos vecinos.
-/// 
-/// En Rust, esto causaría un pánico de seguridad (Out of Bounds). Para solucionarlo de
-/// forma segura, cargamos toda la cabecera en un solo bloque CONTIGUO
-/// de 336 bytes (0x150). Luego usamos "slices" (referencias a rangos exactos) para
-/// leer o desencriptar partes específicas sin violar la seguridad de la memoria.
 
 fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
 
@@ -24,7 +10,15 @@ fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
         inbuf[0xB0..0xB4]
         .try_into().map_err(|_| PspError::SizeError)?
     );
-    println!("Tamaño a desencriptar: {} bytes", decrypt_size);
+
+    // PspError has a #[from] variant for TryFromSliceError,
+    // so `?` converts the error automatically.
+    let decrypt_size = u32::from_le_bytes(
+        inbuf[0xB0..0xB4]
+        .try_into()?
+    );
+
+    println!("Size to decrypt: {} bytes", decrypt_size);
 
     let tag = u32::from_le_bytes(
         inbuf[0xD0..0xD0+4]
