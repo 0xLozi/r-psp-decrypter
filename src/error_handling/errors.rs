@@ -14,6 +14,9 @@ pub enum PspError {
     #[error("Error converting slice: {0}")]
     SliceConversion(#[from] std::array::TryFromSliceError),
 
+    #[error("KIRK engine error: {0}")]
+    Kirk(#[from] KirkError),
+
     #[error("Error al intentar leer el size del archivo...")]
     SizeError,
 

@@ -171,48 +171,49 @@ fn psp_decrypt_type1(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
 
 
 fn psp_decrypt_type2(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
+    if inbuf.len() < 0x150 {
+        return Err(PspError::CorruptedFile)
+    }
+
     // First we have to search into get_tag_2
     // Tag offset is the same as type 1
     let tag_offset = read_u32_le(inbuf, 0xD0)?;
     // Then we search the tag we receive inside TAG_INFO2
     let tag = get_tag_info_2(tag_offset)?;
+    let decrypt_size = read_u32_le(inbuf, 0xB0)?;
 
     // The same procedure as the other types: expand seed
     let key_id = tag.code as i32;
     let key_info = tag.key;
 
-    let mut xorbuf = expanded_seed(key_info, key_id, None)
-    .map_err(|_| PspError::DecryptionFailed)?;
+    let xorbuf = expanded_seed(key_info, key_id, None)?;
 
     let mut type2 = types::PrxType2::new(inbuf);
-    type2.decrypt(key_id).map_err(|_| PspError::DecryptionFailed)?;
+    type2.decrypt(key_id)?;
 
-    let valid = type2.is_valid(&xorbuf);
-
-    if valid {
-        println!("The decryption is valid");
-    } else {
-        return Err(PspError::DecryptionFailed)?;
-    } 
+    if !type2.is_valid(&xorbuf) {
+        return Err(PspError::DecryptionFailed);
+    }
+    println!("The decryption is valid!!!");
 
     let mut kirk_header= [0u8;0x40]; // Like, the size of kirk_header
 
     // Idk why they do this,sony is kinda weird but I trust the bytes!!!
     let xorbuff_after_10 = &xorbuf[0x10..];
 
-    decrypt_kirk_header(&mut kirk_header, type2.kirk_header(), xorbuff_after_10, key_id).map_err(|_| PspError::DecryptionFailed)?;
+    decrypt_kirk_header(&mut kirk_header, type2.kirk_header(), xorbuff_after_10, key_id)?;
 
     let mut final_kirk_header = [0u8; 0x90];
     final_kirk_header[0x00..0x40].copy_from_slice(&kirk_header);
     final_kirk_header[0x60..0x70].copy_from_slice(type2.kirk_metadata());
 
-    // Caso escencial por parte de Sony (Type 2): Para ofuscar el archivo, eliminaron el byte del modo.
-    // Forzamos 'mode = 1' en el offset 0x70 porque nuestra estructura 
-    // KirkCmd1Header es estricta y necesita este interruptor explícito 
-    // para saber que debe encender el motor de desencriptado AES-128-CBC.
+    // Sony-specific case (Type 2): Sony removed the mode byte to obfuscate the file.
+    // We explicitly set 'mode = 1' at offset 0x70 because our KirkCmd1Header
+    // structure requires this flag to determine whether to enable the
+    // AES-128-CBC decryption engine.
     final_kirk_header[0x70] = 1;
 
-    let mut kirk_cmd = KirkCmd1Header::new(&final_kirk_header);
+    let kirk_cmd = KirkCmd1Header::new(&final_kirk_header);
 
     // I already did this at line 615. Thus I don't have to validate what i already this before...
     // if kirk_cmd.mode().map_err(|_| PspError::ValidationFailed)? != 1 {
@@ -220,9 +221,6 @@ fn psp_decrypt_type2(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
     //     return Err(PspError::InvalidMode);
     // }
 
-    let decrypt_size = u32::from_le_bytes(
-        inbuf[0xB0..0xB0+4].try_into().map_err(|_| PspError::DecryptionFailed)?
-    );
     let real_size = decrypt_size as usize;
 
     // El motor AES procesa datos UNICAMENTE en bloques exactos de 16 bytes.
@@ -239,8 +237,12 @@ fn psp_decrypt_type2(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
         real_size + (16 - (real_size % 16))
     };
 
-    inbuf[0xD0..0x150].copy_from_slice(type2.prx_header());
+    // Forgot to add this conditional. With this I make sure that the file isn't corrupted
+    if inbuf.len() < 0xD0 + padded_size {
+        return Err(PspError::CorruptedFile)
+    }
 
+    inbuf[0xD0..0x150].copy_from_slice(type2.prx_header());
     // Despues tenemos que pisar los primeros 80 bytes de la parte desencriptada
     inbuf[0xD0..0x120].copy_from_slice(&final_kirk_header[0x20..0x70]);
 
@@ -248,15 +250,14 @@ fn psp_decrypt_type2(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
     let payload = &mut inbuf[0xD0 .. 0xD0 + padded_size];
 
     // Momento de la verdad...
-    kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
-        .map_err(|_| PspError::DecryptionFailed)?;
+    kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)?;
 
     if let Some(out) = outbuf {
         if out.len() < real_size {
             return Err(PspError::SizeError);
         }
 
-        out[..real_size].copy_from_slice(payload);
+        out[..real_size].copy_from_slice(&payload[..real_size]);
     }
 
     Ok(real_size)   
