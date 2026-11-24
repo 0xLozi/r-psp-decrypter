@@ -265,39 +265,37 @@ fn psp_decrypt_type2(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
 
 
 fn psp_decrypt_type5(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, external_seed: &[u8;16]) -> Result<usize, PspError> {
+    if inbuf.len() < 0x150 {
+        return Err(PspError::CorruptedFile)
+    }
+
     let tag_offset = read_u32_le(inbuf, 0xD0)?;
     let decrypt_size = read_u32_le(inbuf, 0xB0)?;
     let tag = get_tag_info_2(tag_offset)?;
     
-    // Acá usamos la semilla EXTERNA en lugar de tag.seed
-    let mut xorbuff = expanded_seed(
+    // Here we use the external seed instead of tag.seed
+    let xorbuff = expanded_seed(
         tag.key, 
         tag.code as i32,
-        Some(external_seed), // Le inyectamos la llave que robamos del PSAR
-    ).map_err(|_| PspError::DecryptionFailed)?;
+        Some(external_seed), // Here we inyect the key that we stole from PSAR
+    )?;
 
     let mut type5 = types::PrxType5::new(inbuf);
     
-    // Desencriptamos el header usando la semilla externa.
-    // Type 5 usa internamente el comando KIRK_CMD5, no el CMD1.
-    type5.decrypt_header(tag.code as i32, Some(tag.key), Some(external_seed))
-        .map_err(|_| PspError::DecryptionFailed)?;
+    // Then we decrypt the header by using the external seed
+    // Type 5 use internaly KIRK_CMD5, it doesn't use CMD1.
+    type5.decrypt_header(tag.code as i32, Some(tag.key), Some(external_seed))?;
 
-    let xorbuff_before_0x10 = &xorbuff[0..0x10]
-    .try_into()
-    .map_err(|_| PspError::SizeError)?;
+    // I have inside enum thiserror from TryFromSliceError. Therefore I can just use '?'
+    let xorbuff_before_0x10 = &xorbuff[0..0x10].try_into()?;
 
     // Once we validate
-    let valid = type5.is_valid(&xorbuff_before_0x10);
-
-    if !(valid) {
+    if !type5.is_valid(&xorbuff_before_0x10) {
         return Err(PspError::DecryptionFailed);
     }
 
     let mut final_kirk_header = [0u8;0x90];
-    
     final_kirk_header[0x60..0x70].copy_from_slice(type5.kirk_metadata());
-
     let xorbuff_after_10 = &xorbuff[0x10..0x20];
 
     decrypt_kirk_header(
@@ -305,7 +303,7 @@ fn psp_decrypt_type5(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, external_
         type5.kirk_header(), 
         xorbuff_after_10, 
         tag.code as i32
-    ).map_err(|_| PspError::DecryptionFailed)?;
+    )?;
 
     final_kirk_header[0x70] = 1;
 
@@ -318,20 +316,24 @@ fn psp_decrypt_type5(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, external_
         real_size + (16 - (real_size % 16))
     };
 
+    // Forgot to add this conditional. With this I make sure that the file isn't corrupted
+    if inbuf.len() < 0xD0 + padded_size {
+        return Err(PspError::CorruptedFile)
+    }
+
     inbuf[0x40..0xD0].copy_from_slice(&final_kirk_header);
     inbuf[0xD0..0x150].copy_from_slice(type5.prx_header());
 
     let payload = &mut inbuf[0xD0 .. 0xD0 + padded_size];
 
-    kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
-        .map_err(|_| PspError::DecryptionFailed)?;
+    kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)?;
 
     if let Some(out) = outbuf {
         if out.len() < real_size {
             return Err(PspError::SizeError);
         }
 
-        out[..real_size].copy_from_slice(payload);
+        out[..real_size].copy_from_slice(&payload[..real_size]);
     }
 
     Ok(real_size)   
