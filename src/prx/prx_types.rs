@@ -2,6 +2,7 @@ use crate::error_handling::errors::{KirkError, PspError};
 use crate::kirk_lib::kirk_engine::{kirk7, kirk_cmd1_decrypt};
 use crate::kirk_lib::kirk_headers::KirkCmd1Header;
 use crate::keys::{get_tag_info, get_tag_info_2};
+use crate::tag_info::{KeyType, TAG_INFO, TAG_INFO2};
 use super::types;
 
 fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
@@ -36,16 +37,15 @@ fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
     }
 
     // With this we get the unencrypted kirk header
-    type0.decrypt_header(&xorbuf, key_id as i32)
-    .map_err(|_| PspError::HeaderDecryptionFailed)?;
+    type0.decrypt_header(&xorbuf, key_id as i32)?;
 
     let kirk_cmd = KirkCmd1Header::new(type0.kirk_block());
 
-    if kirk_cmd.mode().map_err(|_| PspError::ValidationFailed)? != 1 {
+    if kirk_cmd.mode()? != 1 {
         return Err(PspError::InvalidMode)
     }
 
-    let size = kirk_cmd.data_size().map_err(|_| PspError::ValidationFailed)? as usize;
+    let size = kirk_cmd.data_size()? as usize;
     let psp_header_size = 0x150;
 
     // Here I'm making sure that the buffer is big enough to hold both the header and the claimed payload
@@ -55,8 +55,7 @@ fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
 
     let payload = &mut inbuf[psp_header_size..psp_header_size+size];
 
-    kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)
-    .map_err(|_| PspError::DecryptionFailed)?;
+    kirk_cmd1_decrypt(kirk_cmd.aes_key(), kirk_cmd.cmac_key(), payload)?;
 
     if let Some(out) = outbuf {
         if out.len() < size {
@@ -67,7 +66,6 @@ fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result
     }
 
     Ok(size)
-
 }
 
 fn psp_decrypt_type1(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {
@@ -399,14 +397,14 @@ fn expanded_seed(seed: &[u8; 16], key: i32, bonus_seed: Option<&[u8;16]>) -> Res
 
 
 // This is going to be the only public function
-pub fn decrypt_prx(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>, seed: &mut Option<&[u8; 16]>) -> Result<usize, PspError>{
-    let tag = u32::from_le_bytes(
-        inbuf[0xD0..0xD0+4]
-        .try_into().map_err(|_| PspError::PointerError)?
-    );
-
+pub fn decrypt_prx(
+    inbuf: &mut [u8], 
+    outbuf: &mut Option<&mut [u8]>, 
+    seed: &mut Option<&[u8; 16]>
+) -> Result<usize, PspError>{
+    let tag = read_u32_le(inbuf, 0xD0)?;
     println!("Tag detectado: 0x{:08X}", tag);
-    // fix this
+
     psp_decrypt_type0(&mut *inbuf, outbuf)
         .or_else(|_| psp_decrypt_type1(&mut *inbuf, outbuf))
         .or_else(|_| psp_decrypt_type2(&mut *inbuf, outbuf))
@@ -427,98 +425,49 @@ fn read_u32_le(buf: &[u8], offset: usize) -> Result<u32, PspError> {
 }
 
 
-
-use crate::tag_info::{KeyType, TAG_INFO, TAG_INFO2};
 #[cfg(test)]
 mod tests {
-    use super::*; // Importamos PrxType1 y demas
-    use std::fs::File;
-    use std::io::{Read, Write};
+    use super::*;
 
-    // also fix this, same thing, arguments issue
     #[test]
-   fn test_router_decryption_type0_succeeds() -> Result<(), PspError> {
-        let ruta_eboot = "/home/snake/Downloads/lumine/lumines/lumines_game/PSP_GAME/SYSDIR/EBOOT.BIN";
+    fn decrypt_type0_fails_on_short_buffer() {
+        let mut short_buf = vec![0u8; 0xB3];
+        let result = psp_decrypt_type0(&mut short_buf, &mut None);
+
+        assert!(matches!(result, Err(PspError::SizeError)));
+    }
+
+    #[test]
+    fn decrypt_type0_fails_on_unknown_tag() {
+        let mut buf = vec![0u8; 0x400];
+        // Hehe CAFE = Coffe but in spanish. 
+        buf[0xD0..0xD4].copy_from_slice(&0xCAFEu32.to_le_bytes());
+        let result = psp_decrypt_type0(&mut buf, &mut None);
+        assert!(matches!(result, Err(PspError::TagNotFound)))
+    }
+
+    #[test]
+    fn read_u32_fails_wrong_buff_too_long() {
+        let normal_buff = vec![0u8; 0x150];
+        let result = read_u32_le(&normal_buff, 0x150+1);
+        assert!(matches!(result, Err(PspError::SizeError)))
+    }
+
+    #[test]
+    fn decrypt_type0_fails_validation_on_corrupted_header() {
+        let mut buf = vec![0u8; 0x150];
+        let valid_tag = crate::keys::G_TAG_INFO[0].tag;
+        buf[0xD0..0xD0+4].copy_from_slice(&valid_tag.to_le_bytes());
         
-        let mut file = File::open(ruta_eboot)
-            .expect("No se pudo abrir el EBOOT de Lumines.");
-        
-        let mut eboot_data = Vec::new();
-        file.read_to_end(&mut eboot_data).unwrap();
+        let result = psp_decrypt_type0(&mut buf, &mut None);
+        assert!(matches!(result, Err(PspError::ValidationFailed)));
+    }
 
-		//psp_decrypt_type0(&mut eboot_data)?;
+    #[test]
+    fn decrypt_prx_fails_on_missing_seed() {
+        let mut buf = vec![0u8; 0x150];
+        let result = decrypt_prx(&mut buf, &mut None, &mut None);
+        assert!(matches!(result, Err(PspError::MissingSeed)));
+    }
 
-		let psp_header_size = 0x150;
-		let magic_bytes = &eboot_data[psp_header_size .. psp_header_size + 4];
-		
-		let elf = [0x7F, 0x45, 0x4C, 0x46]; // .ELF
-		let is_psp = magic_bytes == [0x7E, 0x50, 0x53, 0x50]; // ~PSP
-
-
-        // This is for searching inside the ".ELF" extension. This is because we don't know at compile time where it would be
-        let offset_elf= (0..eboot_data.len() - 4)
-        .find(|&i| eboot_data[i..i+4] == elf);
-
-
-        assert!(
-            offset_elf.is_some(),
-            "The router failed"
-        );
-
-
-        Ok(())
-   } 
-
-   // fix this (wrong arguments while calling each function)
-   #[test]
-   fn test_router_decryption_type1_succeeds() -> Result<(), PspError> {
-		let ruta_eboot = "/home/snake/Downloads/lego_batman_game/PSP_GAME/SYSDIR/EBOOT.BIN";
-		let mut file = File::open(ruta_eboot).expect("No se pudo abrir el archivo...");
-
-		let mut eboot_data = Vec::new();
-		file.read_to_end(&mut eboot_data).expect("No se pudo pasar los bytes del archivo al vector...");
-
-		//psp_decrypt_type1(&mut eboot_data)?;
-
-		let elf = [0x7F, 0x45, 0x4C, 0x46]; // .ELF
-
-        // This is for searching inside the ".ELF" extension. This is because we don't know at compile time where it would be
-        let offset_elf= (0..eboot_data.len() - 4)
-        .find(|&i| eboot_data[i..i+4] == elf);
-
-
-        assert!(
-            offset_elf.is_some(),
-            "The router failed"
-        );
-
-		Ok(())
-   }
-
-   #[test]
-   fn test_decryption_type2_succeeds() -> Result<(), PspError> {
-        let ruta_eboot = "/home/snake/Downloads/games_for_decryption/god_of_war/PSP_GAME/SYSDIR/EBOOT.BIN";
-
-		let mut file = File::open(ruta_eboot).expect("No se pudo abrir el archivo...");
-
-		let mut eboot_data = Vec::new();
-		file.read_to_end(&mut eboot_data).expect("No se pudo pasar los bytes del archivo al vector...");
-
-        //psp_decrypt_type2(&mut eboot_data)?;
-
-		let elf = [0x7F, 0x45, 0x4C, 0x46]; // .ELF
-
-        // This is for searching inside the ".ELF" extension. This is because we don't know at compile time where it would be
-        let offset_elf= (0..eboot_data.len() - 4)
-        .find(|&i| eboot_data[i..i+4] == elf);
-
-
-        assert!(
-            offset_elf.is_some(),
-            "The router failed"
-        );
-
-        Ok(())
-   }
 }
-
