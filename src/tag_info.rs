@@ -5,6 +5,7 @@ pub enum KeyType {
     U8(&'static [u8; 144]),
 }
 
+#[allow(non_camel_case_types)]
 pub struct TAG_INFO {
     pub tag: u32,
     pub key: KeyType,
@@ -13,6 +14,7 @@ pub struct TAG_INFO {
 }
 
 // THIS IS DECRYPTION 2
+#[allow(non_camel_case_types)]
 pub struct TAG_INFO2 {
     pub tag: u32,
     pub key: &'static [u8; 16],

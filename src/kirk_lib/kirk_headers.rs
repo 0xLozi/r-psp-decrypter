@@ -1,4 +1,4 @@
-use crate::{error_handling::errors::KirkError, kirk_lib::kirk_engine::KirkReturnValues};
+use crate::{error_handling::errors::KirkError};
 use aes::Aes128;
 
 
@@ -95,6 +95,7 @@ impl KirkCmd1Header {
 }
 
 
+#[allow(dead_code, non_camel_case_types)]
 pub struct Kirk_SHA1_HEADER {
     pub data_size: u32
 }
@@ -108,6 +109,8 @@ impl Kirk_SHA1_HEADER {
     }
 }
 
+// I have to delete this.. Since we aren't performing Firmware Updates decryption 
+#[allow(dead_code, non_camel_case_types)]
 pub struct ECDSA_POINT <'steve> {
     x: &'steve mut [u8;0x14],
     y: &'steve mut [u8;0x14],
@@ -126,6 +129,7 @@ impl <'steve> ECDSA_POINT <'steve> {
     }
 }
 
+#[allow(dead_code, non_camel_case_types)]
 pub struct Kirk_CMD12_BUFFER <'axel>{
     private_key: &'axel mut [u8;0x14],
     public_key: ECDSA_POINT<'axel>,
@@ -226,6 +230,7 @@ impl KirkCmd1EcdsaHeader {
 }
 
 
+#[allow(dead_code, non_camel_case_types)]
 pub struct Kirk_Aes128CBC_Header {
     data: [u8;0x14],
 }

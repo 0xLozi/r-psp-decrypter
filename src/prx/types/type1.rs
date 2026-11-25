@@ -34,6 +34,7 @@ impl PrxType1 {
         Ok(())
     }
 
+    #[allow(unused)]
     pub fn tag(&self) -> &[u8] {
         &self.data[0..4]
     }

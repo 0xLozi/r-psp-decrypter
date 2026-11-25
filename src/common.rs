@@ -1,9 +1,9 @@
 use std::fs::File;
-use std::io::{Read, Write};
-use zlib_rs::{Deflate, Inflate, InflateFlush, Status};
+use std::io::{Write};
+use zlib_rs::{Inflate, InflateFlush, Status};
 
-use flate2::bufread::{GzDecoder, ZlibDecoder};
 
+#[allow(dead_code)]
 pub fn write_file(file_name: &str, buf: &[u8], size: usize) -> std::io::Result<usize> {
     let mut file = File::create(file_name)?;
     // Explanation of why write_all() at reverse_engineering_notes.md
@@ -12,6 +12,10 @@ pub fn write_file(file_name: &str, buf: &[u8], size: usize) -> std::io::Result<u
 }
 
 // The old C caller may provide a buffer which his physical size is larger than the amount of data that this particular decompression operation is supposed to consume. So just in case I also add in_size and out_size as a parameter rather than using the fat_pointer size that is beign store inside him
+// this was for psar files... However now is deprecated. But it took me so much time to make this
+// function work that I'm somewhat attached to it haha. So i'm just gona use this macro so then I
+// don't get warnings while doing cargo build
+#[allow(dead_code)]
 pub fn gunzip(inbuf: &[u8], in_size: usize, outbuf: &mut [u8], out_size: usize, real_in_size: Option<&mut u32>, no_header: bool) -> i32 {
     // inflateInit() implicitly uses MAX_WBITS = 15 -> normal ZLIB Wrapper
     // inflateInit2() uses MAX_WBITS = 15 PLUS 16 = 31 -> GZLIP wrapper because 16 goes to GZIP wrapper and 15 goes to the deflate data windowbits

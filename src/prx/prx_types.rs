@@ -2,7 +2,7 @@ use crate::error_handling::errors::{KirkError, PspError};
 use crate::kirk_lib::kirk_engine::{kirk7, kirk_cmd1_decrypt};
 use crate::kirk_lib::kirk_headers::KirkCmd1Header;
 use crate::keys::{get_tag_info, get_tag_info_2};
-use crate::tag_info::{KeyType, TAG_INFO, TAG_INFO2};
+use crate::tag_info::{KeyType};
 use super::types;
 
 fn psp_decrypt_type0(inbuf: &mut [u8], outbuf: &mut Option<&mut [u8]>) -> Result<usize, PspError> {

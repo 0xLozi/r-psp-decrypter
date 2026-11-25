@@ -1,8 +1,5 @@
-mod keys;
-mod tag_info;
-mod kirk_lib;
-mod error_handling;
-mod prx;
+use r_psp_decrypter::error_handling;
+use r_psp_decrypter::prx;
 use error_handling::errors::PspError;
 use std::fs::File;
 use std::io::{Read, Write};

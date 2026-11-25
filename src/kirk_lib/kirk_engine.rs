@@ -1,10 +1,8 @@
-use aes::{Aes128, cipher};
+use aes::Aes128;
 use aes::cipher::{BlockEncryptMut, KeyInit};
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
-use crate::error_handling::errors::{KirkError, PspError};
-use crate::kirk_lib::kirk_engine::KirkModes::{KirkModeCmd1, KirkModeCmd2, KirkModeCmd3, KirkModeDecryptCbc};
-use crate::kirk_lib::kirk_engine::KirkReturnValues::KirkInvalidMode;
-use crate::kirk_lib::kirk_headers::{self, Kirk_Aes128CBC_Header, Kirk_SHA1_HEADER, KirkCmd1EcdsaHeader, KirkCmd1Header, Kirk_CMD12_BUFFER};
+use crate::error_handling::errors::{KirkError};
+use crate::kirk_lib::kirk_headers::{self, Kirk_Aes128CBC_Header, Kirk_SHA1_HEADER, KirkCmd1Header};
 use sha1::{Sha1, Digest};
 use cmac::{Cmac, Mac};
 
@@ -81,7 +79,8 @@ impl KirkCtx {
         }
     }
 
-    pub fn kirk_cmd1(&self, outbuff: &mut [u8], inbuff: &[u8], size: usize) -> Result<KirkReturnValues, KirkError> {
+    
+    pub fn kirk_cmd1(&self, _outbuff: &mut [u8], inbuff: &[u8], size: usize) -> Result<KirkReturnValues, KirkError> {
         let header = KirkCmd1Header::new(&inbuff);
 
         if size < 0x90 { return Ok(KirkReturnValues::KirkInvalidSize); }
@@ -101,17 +100,17 @@ impl KirkCtx {
             if decryptor_keys.decrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(&mut keys_buffer).is_err() {
                 return Ok(KirkReturnValues::KirkInvalidSize);
             }
-            let clean_aes_key = &keys_buffer[0..16];
-            let clean_cmac_key = &keys_buffer[16..32];
+            //let clean_aes_key = &keys_buffer[0..16];
+            //let clean_cmac_key = &keys_buffer[16..32];
 
             if header.is_ecdsa() {
                 if self.g_check_ecsda {
                     // we need a fucking SHA_CTX...
                     // SHA_CTX sha;
-                    let mut hasher = Sha1::new();
-                    let eheader = KirkCmd1EcdsaHeader::new(inbuff);
-                    let kirk1_pub = [0u8;0x28];
-                    let header_hash = [0u8;0x14];
+                    //let mut hasher = Sha1::new();
+                    //let eheader = KirkCmd1EcdsaHeader::new(inbuff);
+                    //let kirk1_pub = [0u8;0x28];
+                    //let header_hash = [0u8;0x14];
                     
                     unimplemented!("ECDSA signature verification is not yet implemented.");
                 }
@@ -170,6 +169,8 @@ impl KirkCtx {
         Ok(KirkReturnValues::KirkOperationSuccess)
     }
 
+
+    #[allow(unused)]
     pub fn kirk_cmd10(&self, inbuff: &[u8], in_size: usize) -> Result<KirkReturnValues, KirkError> {
         let header = KirkCmd1Header::new(inbuff);
 
@@ -242,14 +243,6 @@ impl KirkCtx {
         let result = sha.finalize();
 
         outbuff[..20].copy_from_slice(&result);
-
-        Ok(KirkReturnValues::KirkOperationSuccess)
-    }
-
-    pub fn kirk_cmd12(&self, outbuff: &mut [u8], out_size: usize) -> Result<KirkReturnValues, KirkError> {
-        let k: [u8;0x15];
-        let key_pair = Kirk_CMD12_BUFFER::new(outbuff);
-
 
         Ok(KirkReturnValues::KirkOperationSuccess)
     }
@@ -395,33 +388,48 @@ static KEYVAULT: [[u8; 0x10]; 0x80] =
 ];
 
 static KIRK1_KEY: [u8;16]  = [0x98, 0xC9, 0x40, 0x97, 0x5C, 0x1D, 0x10, 0xE8, 0x7F, 0xE6, 0x0E, 0xA3, 0xFD, 0x03, 0xA8, 0xBA];
+
+#[allow(dead_code)]
 static KIRK16_KEY: [u8;16] = [0x47, 0x5E, 0x09, 0xF4, 0xA2, 0x37, 0xDA, 0x9B, 0xEF, 0xFF, 0x3B, 0xC0, 0x77, 0x14, 0x3D, 0x8A];
 
 
 // yeah ok 
 /* ECC Curves for Kirk 1 and Kirk 0x11 */
 // Common Curve paramters p and a
-static EC_P: [u8;20] = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
-static EC_A: [u8;20] = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFC]; // mon
+#[allow(dead_code)]
+mod ecc_curves {
+    pub static EC_P: [u8;20] = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
+    pub static EC_A: [u8;20] = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFC]; // mon
+}
 
 // I ain't gonna read all that
 // Kirk 0xC,0xD,0x10,0x11,(likely 0x12)- Unique curve parameters for b, N, and base point G for Kirk 0xC,0xD,0x10,0x11,(likely 0x12) service
 // Since public key is variable, it is not specified here
-static EC_B2: [u8;20] = [0xA6, 0x8B, 0xED, 0xC3, 0x34, 0x18, 0x02, 0x9C, 0x1D, 0x3C, 0xE3, 0x3B, 0x9A, 0x32, 0x1F, 0xCC, 0xBB, 0x9E, 0x0F, 0x0B]; // mon
-static EC_N2: [u8;21] = [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE, 0xFF, 0xFF, 0xB5, 0xAE, 0x3C, 0x52, 0x3E, 0x63, 0x94, 0x4F, 0x21, 0x27];
-static GX2: [u8;20] = [0x12, 0x8E, 0xC4, 0x25, 0x64, 0x87, 0xFD, 0x8F, 0xDF, 0x64, 0xE2, 0x43, 0x7B, 0xC0, 0xA1, 0xF6, 0xD5, 0xAF, 0xDE, 0x2C ];
-static GY2: [u8;20] = [0x59, 0x58, 0x55, 0x7E, 0xB1, 0xDB, 0x00, 0x12, 0x60, 0x42, 0x55, 0x24, 0xDB, 0xC3, 0x79, 0xD5, 0xAC, 0x5F, 0x4A, 0xDF ];
+// yeah and I remember that both g's where the startaing points... What a mess that the original
+// decryption tool contains bugs...
+#[allow(dead_code)]
+mod ec_curve_parameters {
+    pub static EC_B2: [u8;20] = [0xA6, 0x8B, 0xED, 0xC3, 0x34, 0x18, 0x02, 0x9C, 0x1D, 0x3C, 0xE3, 0x3B, 0x9A, 0x32, 0x1F, 0xCC, 0xBB, 0x9E, 0x0F, 0x0B]; // mon
+    pub static EC_N2: [u8;21] = [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE, 0xFF, 0xFF, 0xB5, 0xAE, 0x3C, 0x52, 0x3E, 0x63, 0x94, 0x4F, 0x21, 0x27];
+    pub static GX2: [u8;20] = [0x12, 0x8E, 0xC4, 0x25, 0x64, 0x87, 0xFD, 0x8F, 0xDF, 0x64, 0xE2, 0x43, 0x7B, 0xC0, 0xA1, 0xF6, 0xD5, 0xAF, 0xDE, 0x2C ];
+    pub static GY2: [u8;20] = [0x59, 0x58, 0x55, 0x7E, 0xB1, 0xDB, 0x00, 0x12, 0x60, 0x42, 0x55, 0x24, 0xDB, 0xC3, 0x79, 0xD5, 0xAC, 0x5F, 0x4A, 0xDF ];
+}
 
 // bruh wtf is this
 // KIRK 1 - Unique curve parameters for b, N, and base point G
 // Since public key is hard coded, it is also included
-static EC_B1: [u8;20] = [0x65, 0xD1, 0x48, 0x8C, 0x03, 0x59, 0xE2, 0x34, 0xAD, 0xC9, 0x5B, 0xD3, 0x90, 0x80, 0x14, 0xBD, 0x91, 0xA5, 0x25, 0xF9];
-static EC_N1: [u8;21] = [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x01, 0xB5, 0xC6, 0x17, 0xF2, 0x90, 0xEA, 0xE1, 0xDB, 0xAD, 0x8F];
-static GX1: [u8;20] = [0x22, 0x59, 0xAC, 0xEE, 0x15, 0x48, 0x9C, 0xB0, 0x96, 0xA8, 0x82, 0xF0, 0xAE, 0x1C, 0xF9, 0xFD, 0x8E, 0xE5, 0xF8, 0xFA ];
-static GY1: [u8;20] = [0x60, 0x43, 0x58, 0x45, 0x6D, 0x0A, 0x1C, 0xB2, 0x90, 0x8D, 0xE9, 0x0F, 0x27, 0xD7, 0x5C, 0x82, 0xBE, 0xC1, 0x08, 0xC0 ];
 
-static PX1: [u8;20] = [0xED, 0x9C, 0xE5, 0x82, 0x34, 0xE6, 0x1A, 0x53, 0xC6, 0x85, 0xD6, 0x4D, 0x51, 0xD0, 0x23, 0x6B, 0xC3, 0xB5, 0xD4, 0xB9 ];
-static PY1: [u8;20] = [0x04, 0x9D, 0xF1, 0xA0, 0x75, 0xC0, 0xE0, 0x4F, 0xB3, 0x44, 0x85, 0x8B, 0x61, 0xB7, 0x9B, 0x69, 0xA6, 0x3D, 0x2C, 0x39 ];
+// this was for elliptic curve, somehting that we use in kirk_cmd12 what now is deprectaed
+#[allow(dead_code)]
+mod ec_constants {
+    pub static EC_B1: [u8;20] = [0x65, 0xD1, 0x48, 0x8C, 0x03, 0x59, 0xE2, 0x34, 0xAD, 0xC9, 0x5B, 0xD3, 0x90, 0x80, 0x14, 0xBD, 0x91, 0xA5, 0x25, 0xF9];
+    pub static EC_N1: [u8;21] = [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x01, 0xB5, 0xC6, 0x17, 0xF2, 0x90, 0xEA, 0xE1, 0xDB, 0xAD, 0x8F];
+    pub static GX1: [u8;20] = [0x22, 0x59, 0xAC, 0xEE, 0x15, 0x48, 0x9C, 0xB0, 0x96, 0xA8, 0x82, 0xF0, 0xAE, 0x1C, 0xF9, 0xFD, 0x8E, 0xE5, 0xF8, 0xFA ];
+    pub static GY1: [u8;20] = [0x60, 0x43, 0x58, 0x45, 0x6D, 0x0A, 0x1C, 0xB2, 0x90, 0x8D, 0xE9, 0x0F, 0x27, 0xD7, 0x5C, 0x82, 0xBE, 0xC1, 0x08, 0xC0 ];
+
+    pub static PX1: [u8;20] = [0xED, 0x9C, 0xE5, 0x82, 0x34, 0xE6, 0x1A, 0x53, 0xC6, 0x85, 0xD6, 0x4D, 0x51, 0xD0, 0x23, 0x6B, 0xC3, 0xB5, 0xD4, 0xB9 ];
+    pub static PY1: [u8;20] = [0x04, 0x9D, 0xF1, 0xA0, 0x75, 0xC0, 0xE0, 0x4F, 0xB3, 0x44, 0x85, 0x8B, 0x61, 0xB7, 0x9B, 0x69, 0xA6, 0x3D, 0x2C, 0x39 ];
+}
 
 /* ------------------------- KEY VAULT END ------------------------- */
 
@@ -488,43 +496,44 @@ pub fn kirk_cmd1_decrypt (
 
 
 // Just ignoring it because It's not implemented yet
-#[cfg(any)]
+#[allow(dead_code, unused)]
 pub fn sce_utils_buffer_copy_with_range(outbuff: &mut [u8], out_size: usize, inbuff: &[u8], in_size: usize, cmd: KirkCommand, kirk_ctx: KirkCtx) -> Result<KirkReturnValues, KirkError> {
-    match cmd {
-        KirkCommand::DecryptPrivate => {
-            return Ok(kirk_ctx.kirk_cmd1(outbuff, inbuff, in_size)?);
-        },
-        KirkCommand::EncryptIv0 => {
-            return Ok(kirk_ctx.kirk_cmd4(outbuff, inbuff, in_size)?);
-        },
-        KirkCommand::DecryptIv0 => {
-            return Ok(kirk_ctx.kirk_cmd7(outbuff, inbuff, in_size)?);
-        },
-        KirkCommand::PrivSignCheck => {
-            return Ok(kirk_ctx.kirk_cmd10(inbuff, in_size)?)
-        },
-        KirkCommand::Sha1Hash => {
-           return Ok(kirk_ctx.kirk_cmd11(outbuff, inbuff, in_size)?);
-        },
-        KirkCommand::EcdsaGenKeys => {
-            return Ok(kirk_ctx.kirk_cmd12(outbuff, out_size)?);
-        },
-        KirkCommand::EcdsaMultiplyPoint => {
-            Ok(1)
-        }
-        KirkCommand::Prng => {
-            Ok(1)
-        }
-        KirkCommand::EcdsaSign => {
-            Ok(1)
-        }
-        KirkCommand::EcdsaVerify => {
-            Ok(1)
-        }
-        _ => {
-            println!("Command {:?} is not implemented or is wrong", cmd);
-            Err(KirkError::InvalidCommand)
-        }
-    }
+    todo!("PSP firmware update decryption is not implemented");
+    //match cmd {
+       // KirkCommand::DecryptPrivate => {
+       //     return Ok(kirk_ctx.kirk_cmd1(outbuff, inbuff, in_size)?);
+       // },
+       // KirkCommand::EncryptIv0 => {
+           // return Ok(kirk_ctx.kirk_cmd4(outbuff, inbuff, in_size)?);
+       // },
+       // KirkCommand::DecryptIv0 => {
+           // return Ok(kirk_ctx.kirk_cmd7(outbuff, inbuff, in_size)?);
+       // },
+       // KirkCommand::PrivSignCheck => {
+           // return Ok(kirk_ctx.kirk_cmd10(inbuff, in_size)?)
+       // },
+       // KirkCommand::Sha1Hash => {
+          // return Ok(kirk_ctx.kirk_cmd11(outbuff, inbuff, in_size)?);
+       // },
+       // KirkCommand::EcdsaGenKeys => {
+           // return Ok(kirk_ctx.kirk_cmd12(outbuff, out_size)?);
+       // },
+       // KirkCommand::EcdsaMultiplyPoint => {
+           // Ok(1)
+       // }
+       // KirkCommand::Prng => {
+           // Ok(1)
+       // }
+       // KirkCommand::EcdsaSign => {
+           // Ok(1)
+       // }
+       // KirkCommand::EcdsaVerify => {
+           // Ok(1)
+       // }
+       // _ => {
+           // println!("Command {:?} is not implemented or is wrong", cmd);
+           // Err(KirkError::InvalidCommand)
+       // }
+    //}
 }
 

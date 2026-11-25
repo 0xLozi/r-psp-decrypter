@@ -18,6 +18,7 @@ impl PrxType0 {
         Self { data }
     }
     /// Devuelve los 4 bytes del Tag
+    #[allow(unused)]
     pub fn tag(&self) -> &[u8] {
         &self.data[0..4]
     }
